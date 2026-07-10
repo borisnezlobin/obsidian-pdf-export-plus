@@ -38,7 +38,10 @@ export function endnotesToFootnotes(root: HTMLElement): number {
     ref.className = "pdf-footnote-ref";
     ref.id = backId;
     ref.setAttribute("data-pdf-footnote-ref", footnoteId);
-    ref.textContent = footnoteId;
+    const refLink = doc.createElement("a");
+    refLink.setAttribute("href", `#pdf-fn-note-${footnoteId}`);
+    refLink.textContent = footnoteId;
+    ref.appendChild(refLink);
 
     const span = doc.createElement("span");
     span.className = "pdf-footnote-data";

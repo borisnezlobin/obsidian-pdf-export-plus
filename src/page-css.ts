@@ -7,14 +7,6 @@ const MANUAL_FOOTNOTE_GAP_MM = 5;
 // used for page breaks, but footnotes are placed manually after pagination; its
 // native float: footnote support is too fragile with Obsidian/theme CSS.
 export function buildPageCss(s: PdfFootnotesSettings): string {
-  const footer = s.showPageNumbers
-    ? `@bottom-center {
-         content: counter(page) " / " counter(pages);
-         font-size: 10px;
-         color: #555;
-       }`
-    : "";
-
   return `
     @page {
       size: ${s.pageSize};
@@ -22,7 +14,6 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
         s.marginBottom + MANUAL_FOOTNOTE_RESERVE_MM,
         20
       )}mm ${s.marginLeft}mm;
-      ${footer}
     }
 
     /* Neutralize the app's workspace layout so the note flows as a document. */
@@ -61,7 +52,7 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     .print-root svg,
     .print-root video {
       max-width: 100%;
-      max-height: 150mm;
+      max-height: 120mm;
       height: auto;
       break-inside: avoid;
     }
@@ -100,9 +91,17 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       line-height: 0;
       font-weight: 600;
     }
+    .pdf-footnote-ref a {
+      color: inherit;
+      text-decoration: none;
+    }
 
     .pdf-footnote-data {
       display: none !important;
+    }
+
+    .pagedjs_page {
+      position: relative !important;
     }
 
     .pdf-manual-footnotes {
@@ -132,6 +131,17 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     .pdf-manual-footnote-marker {
       font-weight: 600;
       padding-right: 0.3em;
+    }
+
+    .pdf-manual-page-number {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 7mm;
+      text-align: center;
+      font-size: 10px;
+      line-height: 1;
+      color: #555;
     }
 
     /* The "return to reference" link at the end of each footnote. */

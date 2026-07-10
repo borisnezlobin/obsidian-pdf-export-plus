@@ -47,7 +47,7 @@ export async function paginateInWebview(
   const pageCssText = buildPageCss(settings);
 
   if (settings.debugDump) {
-    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText);
+    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText, settings.showPageNumbers);
   }
 
   onProgress("Opening preview…");
@@ -175,6 +175,7 @@ export async function paginateInWebview(
              var item = document.createElement('div');
              item.className = 'pdf-manual-footnote';
              item.setAttribute('data-pdf-manual-footnote', data.id);
+             item.id = 'pdf-fn-note-' + data.id;
              var marker = document.createElement('span');
              marker.className = 'pdf-manual-footnote-marker';
              marker.textContent = data.id + '.';
@@ -188,9 +189,20 @@ export async function paginateInWebview(
            pages[pageIndex].appendChild(wrap);
          });
        }
+       function placeManualPageNumbers() {
+         if (!${settings.showPageNumbers ? "true" : "false"}) return;
+         var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
+         pages.forEach(function (page, index) {
+           var num = document.createElement('div');
+           num.className = 'pdf-manual-page-number';
+           num.textContent = (index + 1) + ' / ' + pages.length;
+           page.appendChild(num);
+         });
+       }
        window.PagedPolyfill.preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
          .then(function (f) {
            placeManualFootnotes();
+           placeManualPageNumbers();
            if (src) src.remove();
            window.__pagedDone = true;
            window.__pagedPages = f && f.total ? f.total : dest.querySelectorAll('.pagedjs_page').length;
@@ -343,7 +355,8 @@ function dumpDebugHtml(
   theme: ThemeContext,
   styleSheets: string[],
   printStyles: string[],
-  pageCss: string
+  pageCss: string,
+  showPageNumbers: boolean
 ): void {
   try {
     const fs = req("fs");
@@ -397,6 +410,7 @@ function dumpDebugHtml(
         var item = document.createElement('div');
         item.className = 'pdf-manual-footnote';
         item.setAttribute('data-pdf-manual-footnote', note.id);
+        item.id = 'pdf-fn-note-' + note.id;
         var marker = document.createElement('span');
         marker.className = 'pdf-manual-footnote-marker';
         marker.textContent = note.id + '.';
@@ -410,10 +424,19 @@ function dumpDebugHtml(
       pages[pageIndex].appendChild(wrap);
     });
   }
+  function placeManualPageNumbers(dest) {
+    var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
+    pages.forEach(function (page, index) {
+      var num = document.createElement('div');
+      num.className = 'pdf-manual-page-number';
+      num.textContent = (index + 1) + ' / ' + pages.length;
+      page.appendChild(num);
+    });
+  }
   window.addEventListener("load", function () {
     var src = document.getElementById("pf-src"), dest = document.getElementById("pf-dest");
     new window.Paged.Previewer().preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
-      .then(function () { placeManualFootnotes(src, dest); if (src) src.remove(); });
+      .then(function () { placeManualFootnotes(src, dest); ${showPageNumbers ? "placeManualPageNumbers(dest);" : ""} if (src) src.remove(); });
   });
 </script>
 <script>${PAGEDJS_SOURCE}</script>
