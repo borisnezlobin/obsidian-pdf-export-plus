@@ -85,14 +85,9 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       margin: 0 0 1.2em;
     }
 
-    /* If a reference block's footnote cannot fit on the current page, move the
-       whole reference block. Paged.js is prone to dropping content when it
-       splits a paragraph at the same time it is trying to place a footnote. */
-    .print-root .pdf-footnote-ref-block {
-      footnote-policy: block;
-      break-inside: avoid;
-    }
-
+    /* Keep each footnote with the page that contains its call. This must live
+       on the same selector as float: footnote; Paged.js ignores the policy
+       when it is only declared on an ancestor. */
     .print-root .footnote {
       float: footnote;
       footnote-policy: block;
