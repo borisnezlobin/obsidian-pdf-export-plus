@@ -193,13 +193,9 @@ export function collectStyleSheets(): string[] {
   return out;
 }
 
-// Un-wrap every `@media print { … }` block so its rules apply during the
-// on-screen preview too — this is where the user's theme/snippet puts
-// print-only styling (e.g. --p-spacing), which decides how content paginates.
-// Uses the CSSOM (CSSMediaRule.cssRules) rather than regex, so multiple print
-// blocks per sheet are handled correctly. Safe to apply globally only because
-// the note is rendered inside a `.print` wrapper (Obsidian's core print rule
-// hides non-".print" body children).
+// Kept for older debug builds, but pagination no longer unwraps print CSS into
+// the live preview. Obsidian's print rules include structural app hiding rules,
+// and applying those on screen can hide Paged.js's own measurement containers.
 export function collectPrintStyles(): string[] {
   const out: string[] = [];
   for (const sheet of Array.from(document.styleSheets)) {
@@ -230,20 +226,26 @@ export function collectPrintStyles(): string[] {
   return out;
 }
 
-// Snapshot of the main Obsidian window's chrome, so the webview can reproduce
-// the exact theme context: the head carries theme/snippet <link> stylesheets
-// that can't be read via cssRules (cross-origin), and CSS variables live on the
-// body theme classes.
+// Snapshot only the theme identity needed for CSS variables and reading-view
+// typography. Do not carry over app-window chrome classes such as mod-macos,
+// is-frameless, is-hidden-frameless, or plugin UI state; those can activate
+// layout/visibility rules that break Paged.js measurements.
 export interface ThemeContext {
-  headHtml: string;
   bodyClass: string;
-  bodyStyle: string;
 }
 
 export function captureThemeContext(): ThemeContext {
+  const keep = new Set([
+    "theme-light",
+    "theme-dark",
+    "css-settings-manager",
+    "is-mobile",
+    "is-phone",
+    "is-tablet",
+  ]);
+  const classes = Array.from(document.body.classList).filter((cls) => keep.has(cls) || cls.startsWith("theme-"));
+  if (!classes.some((cls) => cls === "theme-light" || cls === "theme-dark")) classes.push("theme-light");
   return {
-    headHtml: document.head.innerHTML,
-    bodyClass: document.body.className,
-    bodyStyle: document.body.getAttribute("style") ?? "",
+    bodyClass: Array.from(new Set(classes)).join(" "),
   };
 }

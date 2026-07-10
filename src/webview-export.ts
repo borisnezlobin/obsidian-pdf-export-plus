@@ -1,17 +1,15 @@
 // Pagination + PDF via a <webview>, mirroring Better Export PDF's proven
 // mechanism, plus Paged.js for page-bottom footnotes.
 //
-// Layout that makes it all work: the note is rendered inside a `.print` wrapper,
-// and Paged.js paginates into a destination that also lives inside `.print`.
-// Obsidian's core print CSS hides every non-".print" body child, so keeping the
-// pages inside `.print` (a) stops that rule from hiding Paged.js's own container
-// (which otherwise crashes it) and (b) lets us apply the theme's @media print
-// styling on screen — so the preview paginates exactly like the exported PDF.
+// Paged.js is very sensitive to hidden/transformed ancestors and to broad app
+// CSS. Run it in a deliberately plain document: content + readable theme rules
+// + our @page stylesheet, without cloning Obsidian's app-window body classes or
+// unwrapping print rules onto the live preview.
 
 import { req } from "./node";
 import { PAGEDJS_SOURCE } from "./pagedjs-bundle";
 import { buildPageCss } from "./page-css";
-import { captureThemeContext, collectPrintStyles, collectStyleSheets, ThemeContext } from "./render";
+import { captureThemeContext, collectStyleSheets, ThemeContext } from "./render";
 import { PdfFootnotesSettings } from "./settings";
 
 export type ProgressFn = (stage: string) => void;
@@ -28,9 +26,40 @@ const DOM_READY_TIMEOUT = 15000;
 const PAGED_TIMEOUT = 90000;
 
 const PATCH_CSS = `
-  body { overflow: auto !important; background: #fff !important; }
-  .markdown-preview-view, .markdown-preview-sizer, .print-root {
-    width: 100% !important; max-width: none !important; height: auto !important;
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    position: static !important;
+    transform: none !important;
+    contain: none !important;
+  }
+  body.pdf-footnotes-export {
+    display: block !important;
+  }
+  #pf-shell, #pf-src, #pf-dest, .print-root,
+  .markdown-preview-view, .markdown-preview-sizer {
+    box-sizing: border-box !important;
+    width: auto !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    overflow: visible !important;
+    position: static !important;
+    transform: none !important;
+    contain: none !important;
+  }
+  .pagedjs_pages, .pagedjs_page, .pagedjs_sheet, .pagedjs_area, .pagedjs_page_content {
+    transform: none !important;
+    contain: none !important;
+    visibility: visible !important;
   }
 `;
 
@@ -42,11 +71,10 @@ export async function paginateInWebview(
 ): Promise<PaginationResult> {
   const theme = captureThemeContext();
   const styleSheets = collectStyleSheets();
-  const printStyles = collectPrintStyles();
   const pageCssText = buildPageCss(settings);
 
   if (settings.debugDump) {
-    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText);
+    dumpDebugHtml(bodyHtml, theme, styleSheets, pageCssText);
   }
 
   onProgress("Opening preview…");
@@ -67,7 +95,7 @@ export async function paginateInWebview(
 
   onProgress("Applying your theme…");
   await webview.executeJavaScript(setupScript(bodyHtml, theme, pageCssText));
-  for (const css of [...styleSheets, ...printStyles, PATCH_CSS]) {
+  for (const css of [...styleSheets, PATCH_CSS]) {
     try {
       await webview.insertCSS(css);
     } catch (e) {
@@ -238,7 +266,6 @@ function dumpDebugHtml(
   bodyHtml: string,
   theme: ThemeContext,
   styleSheets: string[],
-  printStyles: string[],
   pageCss: string
 ): void {
   try {
@@ -257,11 +284,11 @@ function dumpDebugHtml(
 <meta charset="utf-8">
 <!-- PDF Footnotes debug dump. images total=${imgCount} data-uri=${dataImgCount} app-url=${appImgCount} -->
 <style>${safeCss(styleSheets.join("\n"))}</style>
-<style>${safeCss(printStyles.join("\n"))}</style>
 <style>${safeCss(pageCss)}</style>
+<style>${safeCss(PATCH_CSS)}</style>
 </head>
-<body class="${theme.bodyClass} theme-light" style="${theme.bodyStyle}">
-<div class="print"><div id="pf-src">${bodyHtml}</div><div id="pf-dest"></div></div>
+<body class="${theme.bodyClass}">
+<div id="pf-shell" class="print"><div id="pf-src">${bodyHtml}</div><div id="pf-dest"></div></div>
 <script>
   window.PagedConfig = { auto: false };
   window.__pdfPageCss = ${JSON.stringify(pageCss)};
@@ -298,20 +325,18 @@ export async function measureContentHeight(webview: any): Promise<number> {
 
 function setupScript(bodyHtml: string, theme: ThemeContext, pageCss: string): string {
   const dec = (s: string) => `decodeURIComponent("${encodeURIComponent(s)}")`;
-  // Bring the main window's head (theme/snippet <link> styles) and body theme
-  // classes so CSS variables resolve, force light theme, and lay the note out
-  // inside a `.print` wrapper with a separate paginate destination.
+  // Use only a minimal theme class set for CSS variables and typography. Full
+  // Obsidian app-window body classes pull workspace layout rules into Paged.js
+  // and can produce null offsetParents or zero-size measurements.
   return `
     (function () {
       window.PagedConfig = { auto: false };
       window.__pdfPageCss = ${dec(pageCss)};
-      try { document.head.innerHTML = ${dec(theme.headHtml)}; } catch (e) { console.warn("head copy failed", e); }
       document.body.setAttribute("class", ${dec(theme.bodyClass)});
-      document.body.setAttribute("style", ${dec(theme.bodyStyle)});
-      document.body.classList.add("theme-light");
-      document.body.classList.remove("theme-dark");
+      document.body.classList.add("pdf-footnotes-export");
+      document.body.removeAttribute("style");
       document.body.innerHTML =
-        '<div class="print"><div id="pf-src">' + ${dec(bodyHtml)} + '</div><div id="pf-dest"></div></div>';
+        '<div id="pf-shell" class="print"><div id="pf-src">' + ${dec(bodyHtml)} + '</div><div id="pf-dest"></div></div>';
     })();
   `;
 }
