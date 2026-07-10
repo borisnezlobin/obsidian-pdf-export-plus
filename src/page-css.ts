@@ -1,9 +1,11 @@
 import { PdfFootnotesSettings } from "./settings";
 
-// The CSS that turns the rendered note into a paginated document with
-// page-bottom footnotes. This is the piece Paged.js acts on: `float: footnote`
-// moves each note into the page's @footnote area, and the @page margin box
-// reproduces Better Export PDF's "page / total" footer.
+const MANUAL_FOOTNOTE_RESERVE_MM = 54;
+const MANUAL_FOOTNOTE_GAP_MM = 5;
+
+// The CSS that turns the rendered note into a paginated document. Paged.js is
+// used for page breaks, but footnotes are placed manually after pagination; its
+// native float: footnote support is too fragile with Obsidian/theme CSS.
 export function buildPageCss(s: PdfFootnotesSettings): string {
   const footer = s.showPageNumbers
     ? `@bottom-center {
@@ -16,15 +18,11 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
   return `
     @page {
       size: ${s.pageSize};
-      margin: ${s.marginTop}mm ${s.marginRight}mm ${Math.max(s.marginBottom, 20)}mm ${s.marginLeft}mm;
+      margin: ${s.marginTop}mm ${s.marginRight}mm ${Math.max(
+        s.marginBottom + MANUAL_FOOTNOTE_RESERVE_MM,
+        20
+      )}mm ${s.marginLeft}mm;
       ${footer}
-      @footnote {
-        border-top: 0.5pt solid #999;
-        margin-top: 10pt;
-        padding-top: 8pt;
-        /* Keep the footnote area clear of the page-number footer below it. */
-        margin-bottom: 6pt;
-      }
     }
 
     /* Neutralize the app's workspace layout so the note flows as a document. */
@@ -71,6 +69,17 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       max-width: 100%;
     }
 
+    /* Themes often style callouts/quotes as boxed blocks. They must be allowed
+       to split; otherwise a callout that starts near the page bottom can be
+       clipped instead of continuing on the next page. */
+    .print-root .callout,
+    .print-root .callout-content,
+    .print-root blockquote {
+      break-inside: auto !important;
+      page-break-inside: auto !important;
+      overflow: visible !important;
+    }
+
     /* Let lists break across pages, but keep each item whole — Paged.js can
        drop a list item that straddles a page boundary otherwise. */
     .print-root ul,
@@ -85,37 +94,42 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       margin: 0 0 1.2em;
     }
 
-    /* Keep each footnote with the page that contains its call. This must live
-       on the same selector as float: footnote; Paged.js ignores the policy
-       when it is only declared on an ancestor. */
-    .print-root .footnote {
-      float: footnote;
-      footnote-policy: block;
+    .pdf-footnote-ref {
+      font-size: 65%;
+      vertical-align: super;
+      line-height: 0;
+      font-weight: 600;
     }
 
-    /* CRITICAL: Paged.js MOVES each footnote out of .print-root into its own
-       .pagedjs_footnote_area, so footnote text must be sized THERE — a rule
-       scoped to .print-root never reaches it, and the footnote renders at full
-       body size (huge, and it overflows/clips). Force the small size on the
-       Paged.js footnote containers and everything inside them. */
-    .pagedjs_footnote_area,
-    .pagedjs_footnote_content,
-    .pagedjs_footnote_inner_content,
-    .pagedjs_footnote_area * {
+    .pdf-footnote-data {
+      display: none !important;
+    }
+
+    .pdf-manual-footnotes {
+      position: absolute;
+      left: var(--pagedjs-margin-left);
+      right: var(--pagedjs-margin-right);
+      bottom: ${Math.max(s.marginBottom, 10)}mm;
+      max-height: ${MANUAL_FOOTNOTE_RESERVE_MM - MANUAL_FOOTNOTE_GAP_MM}mm;
+      border-top: 0.5pt solid #999;
+      padding-top: 8pt;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+
+    .pdf-manual-footnote,
+    .pdf-manual-footnote * {
       font-size: ${s.footnoteFontPt}pt !important;
       line-height: 1.4 !important;
       overflow-wrap: anywhere;
     }
-    /* A little breathing room between the rule and the first footnote. */
-    .pagedjs_footnote_content {
-      padding-top: 2pt;
+
+    .pdf-manual-footnote {
+      display: block;
+      margin: 0 0 4pt;
     }
-    ::footnote-call {
-      font-size: 65%;
-      vertical-align: super;
-      line-height: 0;
-    }
-    ::footnote-marker {
+
+    .pdf-manual-footnote-marker {
       font-weight: 600;
       padding-right: 0.3em;
     }
