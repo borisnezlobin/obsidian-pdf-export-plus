@@ -233,13 +233,15 @@ export async function paginateInWebview(
          return clone;
        }
        function pageSafeBottom(page) {
-         var content = page.querySelector('.pagedjs_page_content');
-         var cr = content ? content.getBoundingClientRect() : page.getBoundingClientRect();
-         var safe = cr.bottom - 8;
+         var pr = page.getBoundingClientRect();
+         // Chromium's printed page clips before Paged.js's on-screen content
+         // box in a few split-block cases. Use a conservative physical page
+         // boundary, then further shrink it for footnotes/page numbers.
+         var safe = pr.bottom - 120;
          var area = page.querySelector('.pdf-manual-footnotes');
-         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 8);
+         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 16);
          var pageNumber = page.querySelector('.pdf-manual-page-number');
-         if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 8);
+         if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 24);
          return safe;
        }
        function moveCollidingBlocks() {
@@ -268,7 +270,7 @@ export async function paginateInWebview(
          return moved;
        }
        function layoutManualDecorations() {
-         for (var i = 0; i < 4; i++) {
+         for (var i = 0; i < 8; i++) {
            clearManualDecorations();
            placeManualFootnotes();
            placeManualPageNumbers();
@@ -283,7 +285,7 @@ export async function paginateInWebview(
            layoutManualDecorations();
            if (src) src.remove();
            window.__pagedDone = true;
-           window.__pagedPages = f && f.total ? f.total : dest.querySelectorAll('.pagedjs_page').length;
+           window.__pagedPages = dest.querySelectorAll('.pagedjs_page').length;
          })
          .catch(function (e) { window.__pagedError = String(e && e.message ? e.message : e); });
      })();`
@@ -553,13 +555,12 @@ function dumpDebugHtml(
     return clone;
   }
   function pageSafeBottom(page) {
-    var content = page.querySelector('.pagedjs_page_content');
-    var cr = content ? content.getBoundingClientRect() : page.getBoundingClientRect();
-    var safe = cr.bottom - 8;
+    var pr = page.getBoundingClientRect();
+    var safe = pr.bottom - 120;
     var area = page.querySelector('.pdf-manual-footnotes');
-    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 8);
+    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 16);
     var pageNumber = page.querySelector('.pdf-manual-page-number');
-    if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 8);
+    if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 24);
     return safe;
   }
   function moveCollidingBlocks(dest) {
@@ -588,7 +589,7 @@ function dumpDebugHtml(
     return moved;
   }
   function layoutManualDecorations(src, dest) {
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < 8; i++) {
       clearManualDecorations(dest);
       placeManualFootnotes(src, dest);
       ${settings.showPageNumbers ? "placeManualPageNumbers(dest);" : ""}
