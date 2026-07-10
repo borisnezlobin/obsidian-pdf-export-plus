@@ -221,6 +221,39 @@ export async function printWebviewToPdf(
   webview: any,
   settings: PdfFootnotesSettings
 ): Promise<Uint8Array> {
+  // Paged.js has already built full paper-sized page boxes that include the
+  // requested @page margins internally. Chromium must print those boxes with
+  // zero additional print margin; otherwise it clips/reflows the preview pages
+  // and text that is present in the DOM can disappear from the final PDF.
+  await webview.insertCSS(`
+    @page {
+      size: ${settings.pageSize};
+      margin: 0;
+    }
+    @media print {
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+      }
+      #pf-src {
+        display: none !important;
+      }
+      #pf-dest {
+        display: block !important;
+      }
+      .pagedjs_page {
+        margin: 0 !important;
+        box-shadow: none !important;
+        break-after: page;
+        page-break-after: always;
+      }
+      .pagedjs_page:last-child {
+        break-after: auto;
+        page-break-after: auto;
+      }
+    }
+  `);
   const data = await webview.printToPDF({
     pageSize: settings.pageSize,
     printBackground: settings.printBackground,

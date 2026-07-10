@@ -27,6 +27,9 @@ export function endnotesToFootnotes(root: HTMLElement): number {
     const li = defsById.get(id);
     if (!li) return;
 
+    const block = sup.closest("p, li, blockquote, div, section");
+    block?.classList.add("pdf-footnote-ref-block");
+
     const source = (li.querySelector("p") as HTMLElement) || li;
     source.querySelectorAll(".footnote-backref").forEach((b) => b.remove());
 

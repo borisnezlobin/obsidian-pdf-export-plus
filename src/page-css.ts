@@ -85,10 +85,12 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       margin: 0 0 1.2em;
     }
 
-    /* Push a footnote's reference to the next page rather than clipping the
-       footnote when it doesn't fit the current page's footnote area. */
-    .print-root {
-      footnote-policy: line;
+    /* If a reference block's footnote cannot fit on the current page, move the
+       whole reference block. Paged.js is prone to dropping content when it
+       splits a paragraph at the same time it is trying to place a footnote. */
+    .print-root .pdf-footnote-ref-block {
+      footnote-policy: block;
+      break-inside: avoid;
     }
 
     .print-root .footnote {
