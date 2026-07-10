@@ -1,0 +1,26 @@
+{
+  "name": "pdf-footnotes",
+  "version": "0.1.0",
+  "description": "Export Obsidian notes to PDF with footnotes at the bottom of each page.",
+  "main": "main.js",
+  "scripts": {
+    "embed": "node scripts/embed-pagedjs.mjs",
+    "dev": "npm run embed && node esbuild.config.mjs",
+    "build": "npm run embed && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "npm run embed && tsc -noEmit -skipLibCheck"
+  },
+  "keywords": ["obsidian", "obsidian-plugin", "pdf", "footnotes", "pagedjs"],
+  "author": "Boris Nezlobin",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "builtin-modules": "^3.3.0",
+    "esbuild": "^0.20.2",
+    "obsidian": "latest",
+    "tslib": "^2.6.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "pagedjs": "^0.4.3"
+  }
+}

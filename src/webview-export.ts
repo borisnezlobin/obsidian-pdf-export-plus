@@ -1,0 +1,360 @@
+// Pagination + PDF via a <webview>, mirroring Better Export PDF's proven
+// mechanism, plus Paged.js for page-bottom footnotes.
+//
+// Layout that makes it all work: the note is rendered inside a `.print` wrapper,
+// and Paged.js paginates into a destination that also lives inside `.print`.
+// Obsidian's core print CSS hides every non-".print" body child, so keeping the
+// pages inside `.print` (a) stops that rule from hiding Paged.js's own container
+// (which otherwise crashes it) and (b) lets us apply the theme's @media print
+// styling on screen — so the preview paginates exactly like the exported PDF.
+
+import { req } from "./node";
+import { PAGEDJS_SOURCE } from "./pagedjs-bundle";
+import { buildPageCss } from "./page-css";
+import { captureThemeContext, collectPrintStyles, collectStyleSheets, ThemeContext } from "./render";
+import { PdfFootnotesSettings } from "./settings";
+
+export type ProgressFn = (stage: string) => void;
+
+export interface PaginationResult {
+  webview: any;
+  pageCount: number;
+  outputText: string;
+  removedHidden: string[];
+  imageReport: string[];
+}
+
+const DOM_READY_TIMEOUT = 15000;
+const PAGED_TIMEOUT = 90000;
+
+const PATCH_CSS = `
+  body { overflow: auto !important; background: #fff !important; }
+  .markdown-preview-view, .markdown-preview-sizer, .print-root {
+    width: 100% !important; max-width: none !important; height: auto !important;
+  }
+`;
+
+export async function paginateInWebview(
+  host: HTMLElement,
+  bodyHtml: string,
+  settings: PdfFootnotesSettings,
+  onProgress: ProgressFn
+): Promise<PaginationResult> {
+  const theme = captureThemeContext();
+  const styleSheets = collectStyleSheets();
+  const printStyles = collectPrintStyles();
+  const pageCssText = buildPageCss(settings);
+
+  if (settings.debugDump) {
+    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText);
+  }
+
+  onProgress("Opening preview…");
+  const webview = document.createElement("webview") as any;
+  webview.src = "app://obsidian.md/help.html";
+  (webview as any).nodeintegration = true;
+  webview.setAttribute("nodeintegration", "on");
+  // No fixed height here — the modal sets it to the paginated content height so
+  // the (fixed-height) host scrolls. Start tall enough for Paged.js to measure.
+  webview.setAttribute("style", "width: 100%; height: 800px; display: block; border: none; background: #fff;");
+  host.appendChild(webview);
+
+  webview.addEventListener("console-message", (e: any) =>
+    console.log("[PDF Footnotes webview]", e.message)
+  );
+
+  await once(webview, "dom-ready", DOM_READY_TIMEOUT, "The preview page didn't load.");
+
+  onProgress("Applying your theme…");
+  await webview.executeJavaScript(setupScript(bodyHtml, theme, pageCssText));
+  for (const css of [...styleSheets, ...printStyles, PATCH_CSS]) {
+    try {
+      await webview.insertCSS(css);
+    } catch (e) {
+      console.warn("[PDF Footnotes] insertCSS failed for one sheet", e);
+    }
+  }
+
+  // Remove elements that are hidden under the FULL applied theme (class-based
+  // display:none, not just inline styles). A display:none element has a null
+  // offsetParent, which crashes Paged.js's layout pass and drops surrounding
+  // content — the real cause of the missing paragraphs. Must run here, in the
+  // webview, where every Obsidian/theme rule is actually in effect.
+  onProgress("Preparing content…");
+  // Only remove LEAF hidden elements — never a hidden element that still
+  // contains visible text/images (a theme can set a wrapper display:none while
+  // a child overrides it back to visible; removing the wrapper would delete
+  // real content). Report exactly what was removed for debugging.
+  const removedReport = await webview.executeJavaScript(
+    `(function () {
+       var src = document.getElementById('pf-src');
+       if (!src) return [];
+       var nodes = src.querySelectorAll('*'), rm = [], report = [];
+       for (var i = 0; i < nodes.length; i++) {
+         var el = nodes[i];
+         try {
+           if (getComputedStyle(el).display !== 'none') continue;
+           // keep it if any descendant is actually visible
+           var kids = el.querySelectorAll('*'), visibleChild = false;
+           for (var j = 0; j < kids.length; j++) { if (getComputedStyle(kids[j]).display !== 'none') { visibleChild = true; break; } }
+           if (visibleChild) continue;
+           rm.push(el);
+           report.push(el.tagName + '.' + (el.className && el.className.toString ? el.className.toString().slice(0,60) : '') + ' "' + (el.textContent||'').replace(/\\s+/g,' ').trim().slice(0,50) + '"');
+         } catch (e) {}
+       }
+       rm.forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+       return report;
+     })();`
+  );
+  console.log(`[PDF Footnotes] removed ${removedReport.length} hidden element(s):`, removedReport);
+
+  onProgress("Injecting Paged.js…");
+  await webview.executeJavaScript(PAGEDJS_SOURCE);
+
+  // Paginate the source into the `.print` destination. Explicit stylesheets so
+  // Paged.js parses only our page CSS (Obsidian's :is() selectors would crash
+  // it); the theme still applies visually.
+  //
+  // CRITICAL: wait for every image to DECODE and for fonts to load before
+  // paginating. Paged.js measures element geometry; if it runs while a (large
+  // data-URI) image is still decoding, that image has no layout box, its
+  // offsetParent is null, and Paged.js crashes mid-layout — silently dropping
+  // the surrounding content. This was the real cause of missing paragraphs and
+  // vanished images.
+  onProgress("Loading images…");
+  await webview.executeJavaScript(
+    `(async function () {
+       var src = document.getElementById('pf-src');
+       var imgs = Array.prototype.slice.call(src.querySelectorAll('img'));
+       await Promise.all(imgs.map(function (im) {
+         if (im.complete && im.naturalWidth > 0) return Promise.resolve();
+         if (im.decode) return im.decode().catch(function () {});
+         return new Promise(function (r) { im.onload = im.onerror = r; });
+       }));
+       if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+     })();`
+  );
+
+  onProgress("Paginating with Paged.js…");
+  await webview.executeJavaScript(
+    `(function () {
+       var src = document.getElementById('pf-src');
+       var dest = document.getElementById('pf-dest');
+       window.PagedPolyfill.preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
+         .then(function (f) {
+           if (src) src.remove();
+           window.__pagedDone = true;
+           window.__pagedPages = f && f.total ? f.total : dest.querySelectorAll('.pagedjs_page').length;
+         })
+         .catch(function (e) { window.__pagedError = String(e && e.message ? e.message : e); });
+     })();`
+  );
+
+  const pageCount = await waitForPaged(webview);
+
+  // Grab the text that actually made it onto the pages, so the caller can warn
+  // if Paged.js dropped content (it can choke on complex tables/floats).
+  let outputText = "";
+  try {
+    outputText = await webview.executeJavaScript(
+      `(function(){var d=document.getElementById('pf-dest');return d?(d.textContent||'').replace(/\\s+/g,' ').trim():'';})()`
+    );
+  } catch {
+    /* leave "" — treated as "unknown", no false warning */
+  }
+
+  // Per-image status in the final paginated output: does it survive, and where?
+  let imageReport: string[] = [];
+  try {
+    imageReport = await webview.executeJavaScript(
+      `(function () {
+         var d = document.getElementById('pf-dest');
+         var pages = Array.prototype.slice.call(d.querySelectorAll('.pagedjs_page'));
+         var imgs = Array.prototype.slice.call(d.querySelectorAll('img'));
+         return imgs.map(function (im) {
+           var r = im.getBoundingClientRect();
+           var cs = getComputedStyle(im);
+           var pageIdx = -1, overflow = '?';
+           var pc = im.closest('.pagedjs_page_content');
+           if (pc) {
+             var pr = pc.getBoundingClientRect();
+             overflow = (r.bottom > pr.bottom + 2) ? ('OVERFLOWS bottom by ' + Math.round(r.bottom - pr.bottom) + 'px') :
+                        (r.top < pr.top - 2) ? ('above top by ' + Math.round(pr.top - r.top) + 'px') : 'in-box';
+             var pg = im.closest('.pagedjs_page');
+             pageIdx = pages.indexOf(pg) + 1;
+           }
+           return (im.getAttribute('alt') || im.className || '(img)').slice(0,36) +
+             ' | page ' + pageIdx + ' | ' + Math.round(r.width) + 'x' + Math.round(r.height) +
+             ' | ' + overflow +
+             ' | display=' + cs.display + ' visibility=' + cs.visibility + ' opacity=' + cs.opacity;
+         });
+       })();`
+    );
+  } catch {
+    /* ignore */
+  }
+
+  if (settings.debugDump) {
+    try {
+      const paginatedHtml: string = await webview.executeJavaScript(
+        `(function(){var d=document.getElementById('pf-dest');var h=d?d.outerHTML:'';return h.replace(/data:[^"']{40,}/g,'data:IMG');})()`
+      );
+      const fs = req("fs");
+      const os = req("os");
+      const path = req("path");
+      fs.writeFileSync(
+        path.join(os.homedir(), "Downloads", "pdf-footnotes-paginated.html"),
+        `<!doctype html><meta charset="utf-8"><body>${paginatedHtml}</body>`,
+        "utf8"
+      );
+      console.log("[PDF Footnotes] wrote paginated structure to ~/Downloads/pdf-footnotes-paginated.html");
+    } catch (e) {
+      console.warn("[PDF Footnotes] paginated dump failed", e);
+    }
+  }
+
+  onProgress(`Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}.`);
+  return { webview, pageCount, outputText, removedHidden: removedReport, imageReport };
+}
+
+export async function printWebviewToPdf(
+  webview: any,
+  settings: PdfFootnotesSettings
+): Promise<Uint8Array> {
+  const data = await webview.printToPDF({
+    pageSize: settings.pageSize,
+    printBackground: settings.printBackground,
+    preferCSSPageSize: true,
+    scale: 1,
+    margins: { marginType: "none" },
+  });
+  return data as Uint8Array;
+}
+
+// Write a self-contained copy of exactly what the print engine paginates, so
+// layout problems can be reproduced and inspected outside Obsidian. Includes
+// Paged.js so opening the file in a browser re-runs the same pagination.
+function dumpDebugHtml(
+  bodyHtml: string,
+  theme: ThemeContext,
+  styleSheets: string[],
+  printStyles: string[],
+  pageCss: string
+): void {
+  try {
+    const fs = req("fs");
+    const os = req("os");
+    const path = req("path");
+    const imgCount = (bodyHtml.match(/<img/g) || []).length;
+    const dataImgCount = (bodyHtml.match(/<img[^>]+src="data:/g) || []).length;
+    const appImgCount = (bodyHtml.match(/<img[^>]+src="app:/g) || []).length;
+    // Neutralize any stray "</style>"/"</script>" inside the collected CSS so it
+    // can't break out of the <style> tag and corrupt the file's HTML parse.
+    const safeCss = (css: string) => css.replace(/<\//g, "<\\/");
+    const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- PDF Footnotes debug dump. images total=${imgCount} data-uri=${dataImgCount} app-url=${appImgCount} -->
+<style>${safeCss(styleSheets.join("\n"))}</style>
+<style>${safeCss(printStyles.join("\n"))}</style>
+<style>${safeCss(pageCss)}</style>
+</head>
+<body class="${theme.bodyClass} theme-light" style="${theme.bodyStyle}">
+<div class="print"><div id="pf-src">${bodyHtml}</div><div id="pf-dest"></div></div>
+<script>
+  window.PagedConfig = { auto: false };
+  window.__pdfPageCss = ${JSON.stringify(pageCss)};
+  window.addEventListener("load", function () {
+    var src = document.getElementById("pf-src"), dest = document.getElementById("pf-dest");
+    new window.Paged.Previewer().preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
+      .then(function () { if (src) src.remove(); });
+  });
+</script>
+<script>${PAGEDJS_SOURCE}</script>
+</body>
+</html>`;
+    const outPath = path.join(os.homedir(), "Downloads", "pdf-footnotes-debug.html");
+    fs.writeFileSync(outPath, html, "utf8");
+    console.log(
+      `[PDF Footnotes] debug dump written to ${outPath} (images: ${imgCount} total, ${dataImgCount} inlined, ${appImgCount} app:// unresolved)`
+    );
+  } catch (e) {
+    console.warn("[PDF Footnotes] debug dump failed", e);
+  }
+}
+
+// Total height of the paginated pages, so the modal can size the webview to its
+// content and let the surrounding (fixed-height) host scroll through all pages.
+export async function measureContentHeight(webview: any): Promise<number> {
+  try {
+    return await webview.executeJavaScript(
+      `(function(){var d=document.getElementById('pf-dest')||document.body;return Math.ceil(d.getBoundingClientRect().height)+24;})()`
+    );
+  } catch {
+    return 0;
+  }
+}
+
+function setupScript(bodyHtml: string, theme: ThemeContext, pageCss: string): string {
+  const dec = (s: string) => `decodeURIComponent("${encodeURIComponent(s)}")`;
+  // Bring the main window's head (theme/snippet <link> styles) and body theme
+  // classes so CSS variables resolve, force light theme, and lay the note out
+  // inside a `.print` wrapper with a separate paginate destination.
+  return `
+    (function () {
+      window.PagedConfig = { auto: false };
+      window.__pdfPageCss = ${dec(pageCss)};
+      try { document.head.innerHTML = ${dec(theme.headHtml)}; } catch (e) { console.warn("head copy failed", e); }
+      document.body.setAttribute("class", ${dec(theme.bodyClass)});
+      document.body.setAttribute("style", ${dec(theme.bodyStyle)});
+      document.body.classList.add("theme-light");
+      document.body.classList.remove("theme-dark");
+      document.body.innerHTML =
+        '<div class="print"><div id="pf-src">' + ${dec(bodyHtml)} + '</div><div id="pf-dest"></div></div>';
+    })();
+  `;
+}
+
+function waitForPaged(webview: any): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - started > PAGED_TIMEOUT) {
+        clearInterval(poll);
+        reject(new Error("Paged.js timed out while laying out the pages."));
+        return;
+      }
+      let state: string;
+      try {
+        state = await webview.executeJavaScript(
+          `window.__pagedError ? ('err:' + window.__pagedError) : (window.__pagedDone ? ('ok:' + (window.__pagedPages || 0)) : 'wait')`
+        );
+      } catch {
+        return; // transient; keep polling
+      }
+      if (state.startsWith("ok:")) {
+        clearInterval(poll);
+        resolve(Number(state.slice(3)) || 0);
+      } else if (state.startsWith("err:")) {
+        clearInterval(poll);
+        reject(new Error("Paged.js failed: " + state.slice(4)));
+      }
+    }, 350);
+  });
+}
+
+function once(el: any, event: string, timeoutMs: number, timeoutMsg: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      el.removeEventListener(event, handler);
+      reject(new Error(timeoutMsg));
+    }, timeoutMs);
+    const handler = () => {
+      clearTimeout(timer);
+      el.removeEventListener(event, handler);
+      resolve();
+    };
+    el.addEventListener(event, handler);
+  });
+}

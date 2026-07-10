@@ -1,0 +1,10 @@
+{
+  "id": "pdf-footnotes",
+  "name": "PDF Footnotes",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Export notes to PDF with footnotes at the bottom of each page (via Paged.js), as a drop-in alternative to Better Export PDF.",
+  "author": "Boris Nezlobin",
+  "authorUrl": "https://borisnezlobin.com",
+  "isDesktopOnly": true
+}
