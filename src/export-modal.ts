@@ -128,7 +128,7 @@ export class ExportModal extends Modal {
         this.setStatus("Rendering note…");
         this.prepared = await prepareNote(this.app, this.file, this.opts.includeTitle);
       }
-      const { webview, pageCount, outputText, removedHidden, imageReport } = await paginateInWebview(
+      const { webview, pageCount, outputText, removedHidden, imageReport, footnotePolicyReport } = await paginateInWebview(
         this.previewHost,
         this.prepared.bodyHtml,
         this.opts,
@@ -157,6 +157,7 @@ export class ExportModal extends Modal {
           pageCount,
           removedHidden,
           imageReport,
+          footnotePolicyReport,
           droppedRun: maxRun,
           droppedExcerpt: excerpt,
         });

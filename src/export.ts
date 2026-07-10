@@ -60,7 +60,14 @@ export function detectDroppedText(sourceText: string, outputText: string): { max
 // what was dropped and why, without a live debugging session.
 export function writeDebugReport(
   fileName: string,
-  info: { pageCount: number; removedHidden: string[]; imageReport: string[]; droppedRun: number; droppedExcerpt: string }
+  info: {
+    pageCount: number;
+    removedHidden: string[];
+    imageReport: string[];
+    footnotePolicyReport: string[];
+    droppedRun: number;
+    droppedExcerpt: string;
+  }
 ): void {
   try {
     const fs = req("fs");
@@ -72,6 +79,9 @@ export function writeDebugReport(
       ``,
       `IMAGES in output (${info.imageReport.length}):`,
       ...info.imageReport.map((s) => "  " + s),
+      ``,
+      `FOOTNOTE POLICIES in output (${info.footnotePolicyReport.length}):`,
+      ...info.footnotePolicyReport.map((s) => "  " + s),
       ``,
       `HIDDEN elements removed before pagination (${info.removedHidden.length}):`,
       ...info.removedHidden.map((s) => "  " + s),

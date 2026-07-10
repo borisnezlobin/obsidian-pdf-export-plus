@@ -95,6 +95,7 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
 
     .print-root .footnote {
       float: footnote;
+      footnote-policy: block;
     }
 
     /* CRITICAL: Paged.js MOVES each footnote out of .print-root into its own

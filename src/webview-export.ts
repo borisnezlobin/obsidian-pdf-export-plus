@@ -22,6 +22,7 @@ export interface PaginationResult {
   outputText: string;
   removedHidden: string[];
   imageReport: string[];
+  footnotePolicyReport: string[];
 }
 
 const DOM_READY_TIMEOUT = 15000;
@@ -194,6 +195,25 @@ export async function paginateInWebview(
     /* ignore */
   }
 
+  let footnotePolicyReport: string[] = [];
+  try {
+    footnotePolicyReport = await webview.executeJavaScript(
+      `(function () {
+         var d = document.getElementById('pf-dest');
+         var pages = Array.prototype.slice.call(d.querySelectorAll('.pagedjs_page'));
+         return Array.prototype.slice.call(d.querySelectorAll('[data-note="footnote"]')).map(function (fn, i) {
+           var pg = fn.closest('.pagedjs_page');
+           return '#' + (i + 1) + ' page ' + (pages.indexOf(pg) + 1) +
+             ' policy=' + (fn.getAttribute('data-note-policy') || '') +
+             ' display=' + (fn.getAttribute('data-note-display') || '') +
+             ' text="' + (fn.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 80) + '"';
+         });
+       })();`
+    );
+  } catch {
+    /* ignore */
+  }
+
   if (settings.debugDump) {
     try {
       const paginatedHtml: string = await webview.executeJavaScript(
@@ -214,7 +234,7 @@ export async function paginateInWebview(
   }
 
   onProgress(`Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}.`);
-  return { webview, pageCount, outputText, removedHidden: removedReport, imageReport };
+  return { webview, pageCount, outputText, removedHidden: removedReport, imageReport, footnotePolicyReport };
 }
 
 export async function printWebviewToPdf(
