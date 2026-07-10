@@ -1,8 +1,5 @@
 import { PdfFootnotesSettings } from "./settings";
 
-const MANUAL_FOOTNOTE_RESERVE_MM = 30;
-const MANUAL_FOOTNOTE_GAP_MM = 4;
-
 // The CSS that turns the rendered note into a paginated document. Paged.js is
 // used for page breaks, but footnotes are placed manually after pagination; its
 // native float: footnote support is too fragile with Obsidian/theme CSS.
@@ -10,10 +7,7 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
   return `
     @page {
       size: ${s.pageSize};
-      margin: ${s.marginTop}mm ${s.marginRight}mm ${Math.max(
-        s.marginBottom + MANUAL_FOOTNOTE_RESERVE_MM,
-        20
-      )}mm ${s.marginLeft}mm;
+      margin: ${s.marginTop}mm ${s.marginRight}mm ${Math.max(s.marginBottom, 20)}mm ${s.marginLeft}mm;
     }
 
     /* Neutralize the app's workspace layout so the note flows as a document. */
@@ -83,6 +77,12 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     .print-root .callout-content {
       padding: 0.75em 1.2em !important;
     }
+    .print-root .callout-content > :first-child {
+      margin-top: 0 !important;
+    }
+    .print-root .callout-content > :last-child {
+      margin-bottom: 0 !important;
+    }
 
     /* Let lists break across pages, but keep each item whole — Paged.js can
        drop a list item that straddles a page boundary otherwise. */
@@ -122,11 +122,11 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       left: var(--pagedjs-margin-left);
       right: var(--pagedjs-margin-right);
       bottom: ${Math.max(s.marginBottom, 10)}mm;
-      max-height: ${MANUAL_FOOTNOTE_RESERVE_MM - MANUAL_FOOTNOTE_GAP_MM}mm;
       border-top: 0.5pt solid #999;
       padding-top: 8pt;
-      overflow: hidden;
+      overflow: visible;
       box-sizing: border-box;
+      background: #fff;
     }
 
     .pdf-manual-footnote,
