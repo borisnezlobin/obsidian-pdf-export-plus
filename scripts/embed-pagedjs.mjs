@@ -23,6 +23,19 @@ if (!source.includes(NEEDLE)) {
 }
 source = source.replace(NEEDLE, PATCH);
 
+// PATCH: Paged.js's overflow finder intentionally ignores floats when choosing
+// the node where a page should break. Upstream issue #153 shows this causes
+// floats near page ends to be clipped/truncated or missed. Paged.js footnotes
+// use the same float-based machinery, so long footnote areas can make the
+// body content render under the footnotes instead of being pushed to the next
+// page. Treat floats like normal elements for overflow break detection.
+const FLOAT_SKIP_NEEDLE = "if (!br && !isFloat && isElement(node)) {";
+const FLOAT_SKIP_PATCH = "if (!br && isElement(node)) {";
+if (!source.includes(FLOAT_SKIP_NEEDLE)) {
+  throw new Error("embed-pagedjs: float-overflow target not found — Paged.js internals changed; re-check the patch.");
+}
+source = source.replace(FLOAT_SKIP_NEEDLE, FLOAT_SKIP_PATCH);
+
 writeFileSync(
   out,
   `// AUTO-GENERATED from pagedjs/dist/paged.polyfill.js — do not edit by hand.\n` +
