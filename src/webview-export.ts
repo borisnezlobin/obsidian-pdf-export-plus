@@ -249,9 +249,7 @@ export async function paginateInWebview(
            var page = pages[i];
            var safeBottom = pageSafeBottom(page);
            var section = pageSection(page);
-           var nextPage = ensureNextPage(pages, i);
-           var nextSection = pageSection(nextPage);
-           if (!section || !nextSection) continue;
+           if (!section) continue;
            var guard = 0;
            while (guard++ < 12) {
              var children = Array.prototype.slice.call(section.children).filter(function (child) {
@@ -260,6 +258,9 @@ export async function paginateInWebview(
                return r.height > 0 && r.bottom > safeBottom;
              });
              if (!children.length) break;
+             var nextPage = ensureNextPage(pages, i);
+             var nextSection = pageSection(nextPage);
+             if (!nextSection) break;
              nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
              moved = true;
            }
@@ -568,9 +569,7 @@ function dumpDebugHtml(
       var page = pages[i];
       var safeBottom = pageSafeBottom(page);
       var section = pageSection(page);
-      var nextPage = ensureNextPage(pages, i);
-      var nextSection = pageSection(nextPage);
-      if (!section || !nextSection) continue;
+      if (!section) continue;
       var guard = 0;
       while (guard++ < 12) {
         var children = Array.prototype.slice.call(section.children).filter(function (child) {
@@ -579,6 +578,9 @@ function dumpDebugHtml(
           return r.height > 0 && r.bottom > safeBottom;
         });
         if (!children.length) break;
+        var nextPage = ensureNextPage(pages, i);
+        var nextSection = pageSection(nextPage);
+        if (!nextSection) break;
         nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
         moved = true;
       }
