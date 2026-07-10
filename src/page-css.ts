@@ -1,7 +1,7 @@
 import { PdfFootnotesSettings } from "./settings";
 
-const MANUAL_FOOTNOTE_RESERVE_MM = 54;
-const MANUAL_FOOTNOTE_GAP_MM = 5;
+const MANUAL_FOOTNOTE_RESERVE_MM = 30;
+const MANUAL_FOOTNOTE_GAP_MM = 4;
 
 // The CSS that turns the rendered note into a paginated document. Paged.js is
 // used for page breaks, but footnotes are placed manually after pagination; its
@@ -70,6 +70,19 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       page-break-inside: auto !important;
       overflow: visible !important;
     }
+    .print-root .callout {
+      min-height: 0 !important;
+    }
+    .print-root .callout-title {
+      min-height: 0 !important;
+      padding: 0.55em 1.2em !important;
+    }
+    .print-root .callout-icon {
+      display: none !important;
+    }
+    .print-root .callout-content {
+      padding: 0.75em 1.2em !important;
+    }
 
     /* Let lists break across pages, but keep each item whole — Paged.js can
        drop a list item that straddles a page boundary otherwise. */
@@ -131,6 +144,13 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     .pdf-manual-footnote-marker {
       font-weight: 600;
       padding-right: 0.3em;
+    }
+
+    .pdf-footnote-target {
+      display: block;
+      width: 0;
+      height: 0;
+      overflow: hidden;
     }
 
     .pdf-manual-page-number {

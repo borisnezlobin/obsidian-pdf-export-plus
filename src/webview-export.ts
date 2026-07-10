@@ -169,13 +169,18 @@ export async function paginateInWebview(
          });
          buckets.forEach(function (notes, pageIndex) {
            if (!notes.length) return;
+           notes.forEach(function (data) {
+             var target = document.createElement('span');
+             target.className = 'pdf-footnote-target';
+             target.id = 'pdf-fn-note-' + data.id;
+             pages[pageIndex].appendChild(target);
+           });
            var wrap = document.createElement('div');
            wrap.className = 'pdf-manual-footnotes';
            notes.forEach(function (data) {
              var item = document.createElement('div');
              item.className = 'pdf-manual-footnote';
              item.setAttribute('data-pdf-manual-footnote', data.id);
-             item.id = 'pdf-fn-note-' + data.id;
              var marker = document.createElement('span');
              marker.className = 'pdf-manual-footnote-marker';
              marker.textContent = data.id + '.';
@@ -409,13 +414,18 @@ function dumpDebugHtml(
     });
     buckets.forEach(function (notes, pageIndex) {
       if (!notes.length) return;
+      notes.forEach(function (note) {
+        var target = document.createElement('span');
+        target.className = 'pdf-footnote-target';
+        target.id = 'pdf-fn-note-' + note.id;
+        pages[pageIndex].appendChild(target);
+      });
       var wrap = document.createElement('div');
       wrap.className = 'pdf-manual-footnotes';
       notes.forEach(function (note) {
         var item = document.createElement('div');
         item.className = 'pdf-manual-footnote';
         item.setAttribute('data-pdf-manual-footnote', note.id);
-        item.id = 'pdf-fn-note-' + note.id;
         var marker = document.createElement('span');
         marker.className = 'pdf-manual-footnote-marker';
         marker.textContent = note.id + '.';
