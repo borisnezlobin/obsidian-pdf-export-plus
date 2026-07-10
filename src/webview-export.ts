@@ -47,7 +47,7 @@ export async function paginateInWebview(
   const pageCssText = buildPageCss(settings);
 
   if (settings.debugDump) {
-    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText, settings.showPageNumbers);
+    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText, settings);
   }
 
   onProgress("Opening preview…");
@@ -308,7 +308,19 @@ export async function printWebviewToPdf(
   // requested @page margins internally. Chromium must print those boxes with
   // zero additional print margin; otherwise it clips/reflows the preview pages
   // and text that is present in the DOM can disappear from the final PDF.
-  await webview.insertCSS(`
+  await webview.insertCSS(buildPrintStageCss(settings));
+  const data = await webview.printToPDF({
+    pageSize: settings.pageSize,
+    printBackground: settings.printBackground,
+    preferCSSPageSize: true,
+    scale: 1,
+    margins: { marginType: "none" },
+  });
+  return data as Uint8Array;
+}
+
+function buildPrintStageCss(settings: PdfFootnotesSettings): string {
+  return `
     @page {
       size: ${settings.pageSize};
       margin: 0;
@@ -336,15 +348,7 @@ export async function printWebviewToPdf(
         page-break-after: auto;
       }
     }
-  `);
-  const data = await webview.printToPDF({
-    pageSize: settings.pageSize,
-    printBackground: settings.printBackground,
-    preferCSSPageSize: true,
-    scale: 1,
-    margins: { marginType: "none" },
-  });
-  return data as Uint8Array;
+  `;
 }
 
 // Write a self-contained copy of exactly what the print engine paginates, so
@@ -356,7 +360,7 @@ function dumpDebugHtml(
   styleSheets: string[],
   printStyles: string[],
   pageCss: string,
-  showPageNumbers: boolean
+  settings: PdfFootnotesSettings
 ): void {
   try {
     const fs = req("fs");
@@ -376,6 +380,7 @@ function dumpDebugHtml(
 <style>${safeCss(styleSheets.join("\n"))}</style>
 <style>${safeCss(printStyles.join("\n"))}</style>
 <style>${safeCss(pageCss)}</style>
+<style>${safeCss(buildPrintStageCss(settings))}</style>
 </head>
 <body class="${theme.bodyClass} theme-light" style="${theme.bodyStyle}">
 <div class="print"><div id="pf-src">${bodyHtml}</div><div id="pf-dest"></div></div>
@@ -436,7 +441,7 @@ function dumpDebugHtml(
   window.addEventListener("load", function () {
     var src = document.getElementById("pf-src"), dest = document.getElementById("pf-dest");
     new window.Paged.Previewer().preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
-      .then(function () { placeManualFootnotes(src, dest); ${showPageNumbers ? "placeManualPageNumbers(dest);" : ""} if (src) src.remove(); });
+      .then(function () { placeManualFootnotes(src, dest); ${settings.showPageNumbers ? "placeManualPageNumbers(dest);" : ""} if (src) src.remove(); });
   });
 </script>
 <script>${PAGEDJS_SOURCE}</script>
