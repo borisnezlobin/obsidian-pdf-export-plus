@@ -212,23 +212,52 @@ export async function paginateInWebview(
        function pageSection(page) {
          return page && page.querySelector('.markdown-preview-sizer, .markdown-preview-section');
        }
+       function clearSection(section) {
+         if (!section) return;
+         while (section.firstChild) section.removeChild(section.firstChild);
+       }
+       function ensureNextPage(pages, index) {
+         if (index + 1 < pages.length) return pages[index + 1];
+         var clone = pages[index].cloneNode(true);
+         clone.id = 'page-' + (pages.length + 1);
+         clone.setAttribute('data-page-number', String(pages.length + 1));
+         Array.prototype.slice.call(clone.querySelectorAll('[id]')).forEach(function (n) {
+           if (n !== clone) n.removeAttribute('id');
+         });
+         Array.prototype.slice.call(clone.querySelectorAll('.pdf-manual-footnotes, .pdf-manual-page-number, .pdf-footnote-target')).forEach(function (n) {
+           if (n.parentNode) n.parentNode.removeChild(n);
+         });
+         clearSection(pageSection(clone));
+         pages[index].parentNode.appendChild(clone);
+         pages.push(clone);
+         return clone;
+       }
+       function pageSafeBottom(page) {
+         var content = page.querySelector('.pagedjs_page_content');
+         var cr = content ? content.getBoundingClientRect() : page.getBoundingClientRect();
+         var safe = cr.bottom - 8;
+         var area = page.querySelector('.pdf-manual-footnotes');
+         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 8);
+         var pageNumber = page.querySelector('.pdf-manual-page-number');
+         if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 8);
+         return safe;
+       }
        function moveCollidingBlocks() {
          var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
          var moved = false;
-         for (var i = 0; i < pages.length - 1; i++) {
+         for (var i = 0; i < pages.length; i++) {
            var page = pages[i];
-           var area = page.querySelector('.pdf-manual-footnotes');
-           if (!area) continue;
-           var areaTop = area.getBoundingClientRect().top - 8;
+           var safeBottom = pageSafeBottom(page);
            var section = pageSection(page);
-           var nextSection = pageSection(pages[i + 1]);
+           var nextPage = ensureNextPage(pages, i);
+           var nextSection = pageSection(nextPage);
            if (!section || !nextSection) continue;
            var guard = 0;
            while (guard++ < 12) {
              var children = Array.prototype.slice.call(section.children).filter(function (child) {
                if (child.classList && (child.classList.contains('pdf-footnote-data') || child.classList.contains('pdf-footnote-target'))) return false;
                var r = child.getBoundingClientRect();
-               return r.height > 0 && r.bottom > areaTop;
+               return r.height > 0 && r.bottom > safeBottom;
              });
              if (!children.length) break;
              nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
@@ -502,23 +531,52 @@ function dumpDebugHtml(
   function pageSection(page) {
     return page && page.querySelector('.markdown-preview-sizer, .markdown-preview-section');
   }
+  function clearSection(section) {
+    if (!section) return;
+    while (section.firstChild) section.removeChild(section.firstChild);
+  }
+  function ensureNextPage(pages, index) {
+    if (index + 1 < pages.length) return pages[index + 1];
+    var clone = pages[index].cloneNode(true);
+    clone.id = 'page-' + (pages.length + 1);
+    clone.setAttribute('data-page-number', String(pages.length + 1));
+    Array.prototype.slice.call(clone.querySelectorAll('[id]')).forEach(function (n) {
+      if (n !== clone) n.removeAttribute('id');
+    });
+    Array.prototype.slice.call(clone.querySelectorAll('.pdf-manual-footnotes, .pdf-manual-page-number, .pdf-footnote-target')).forEach(function (n) {
+      if (n.parentNode) n.parentNode.removeChild(n);
+    });
+    clearSection(pageSection(clone));
+    pages[index].parentNode.appendChild(clone);
+    pages.push(clone);
+    return clone;
+  }
+  function pageSafeBottom(page) {
+    var content = page.querySelector('.pagedjs_page_content');
+    var cr = content ? content.getBoundingClientRect() : page.getBoundingClientRect();
+    var safe = cr.bottom - 8;
+    var area = page.querySelector('.pdf-manual-footnotes');
+    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 8);
+    var pageNumber = page.querySelector('.pdf-manual-page-number');
+    if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 8);
+    return safe;
+  }
   function moveCollidingBlocks(dest) {
     var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
     var moved = false;
-    for (var i = 0; i < pages.length - 1; i++) {
+    for (var i = 0; i < pages.length; i++) {
       var page = pages[i];
-      var area = page.querySelector('.pdf-manual-footnotes');
-      if (!area) continue;
-      var areaTop = area.getBoundingClientRect().top - 8;
+      var safeBottom = pageSafeBottom(page);
       var section = pageSection(page);
-      var nextSection = pageSection(pages[i + 1]);
+      var nextPage = ensureNextPage(pages, i);
+      var nextSection = pageSection(nextPage);
       if (!section || !nextSection) continue;
       var guard = 0;
       while (guard++ < 12) {
         var children = Array.prototype.slice.call(section.children).filter(function (child) {
           if (child.classList && (child.classList.contains('pdf-footnote-data') || child.classList.contains('pdf-footnote-target'))) return false;
           var r = child.getBoundingClientRect();
-          return r.height > 0 && r.bottom > areaTop;
+          return r.height > 0 && r.bottom > safeBottom;
         });
         if (!children.length) break;
         nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
