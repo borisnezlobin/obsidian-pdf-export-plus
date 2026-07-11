@@ -1,10 +1,10 @@
-// Turn Obsidian's rendered end-of-document footnotes into inline notes that
-// Paged.js can float to the bottom of the page. Obsidian renders a reference as
+// Turn Obsidian's rendered end-of-document footnotes into inline note metadata
+// that the export webview can place at the bottom of each page. Obsidian renders a reference as
 //   <sup class="footnote-ref"><a href="#fn-ID">n</a></sup>
 // and its definition as a <li id="fn-ID"> inside <section class="footnotes">.
-// We move each definition's content into a <span class="footnote"> right at the
-// reference (Paged.js floats it) and drop the end list. A tiny anchor is left at
-// the reference so a "return" link inside the footnote can jump back to it.
+// We leave a visible superscript call at the reference and store the definition
+// next to it in a hidden span. After Paged.js paginates normal body content, the
+// webview maps each call to its page and appends that page's footnotes manually.
 
 // Phosphor "arrow-u-up-left" — a return arrow, matching the user's icon set.
 const RETURN_ICON =
@@ -32,14 +32,20 @@ export function endnotesToFootnotes(root: HTMLElement): number {
 
     moved++;
     const backId = `pdf-fnback-${moved}`;
+    const footnoteId = String(moved);
 
-    // Stays in the body at the reference: the target the return link jumps to.
-    const anchor = doc.createElement("span");
-    anchor.className = "pdf-fn-anchor";
-    anchor.id = backId;
+    const ref = doc.createElement("sup");
+    ref.className = "pdf-footnote-ref";
+    ref.id = backId;
+    ref.setAttribute("data-pdf-footnote-ref", footnoteId);
+    const refLink = doc.createElement("a");
+    refLink.setAttribute("href", `#pdf-fn-note-${footnoteId}`);
+    refLink.textContent = footnoteId;
+    ref.appendChild(refLink);
 
     const span = doc.createElement("span");
-    span.className = "footnote";
+    span.className = "pdf-footnote-data";
+    span.setAttribute("data-pdf-footnote", footnoteId);
     span.innerHTML = source.innerHTML.trim();
 
     // A return link, appended to the footnote, that jumps back to the reference.
@@ -51,7 +57,7 @@ export function endnotesToFootnotes(root: HTMLElement): number {
     span.appendChild(doc.createTextNode(" "));
     span.appendChild(ret);
 
-    sup.replaceWith(anchor, span);
+    sup.replaceWith(ref, span);
   });
 
   root.querySelectorAll("section.footnotes").forEach((s) => s.remove());
