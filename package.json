@@ -4,14 +4,14 @@
   "description": "Export Obsidian notes to PDF with footnotes at the bottom of each page.",
   "main": "main.js",
   "scripts": {
-    "embed": "node scripts/embed-pagedjs.mjs",
+    "embed": "node scripts/embed-vivliostyle.mjs",
     "dev": "npm run embed && node esbuild.config.mjs",
     "build": "npm run embed && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "typecheck": "npm run embed && tsc -noEmit -skipLibCheck"
   },
-  "keywords": ["obsidian", "obsidian-plugin", "pdf", "footnotes", "pagedjs"],
+  "keywords": ["obsidian", "obsidian-plugin", "pdf", "footnotes", "vivliostyle"],
   "author": "Boris Nezlobin",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "devDependencies": {
     "@types/node": "^20.11.0",
     "builtin-modules": "^3.3.0",
@@ -21,6 +21,6 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "pagedjs": "^0.4.3"
+    "@vivliostyle/core": "^2.44.1"
   }
 }
