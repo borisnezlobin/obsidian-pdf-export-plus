@@ -368,8 +368,11 @@ export async function paginateInWebview(
              var fragment = document.createDocumentFragment();
              var continuation = splitParagraphAt(children[firstOverflow], safeBottom);
              if (continuation) fragment.appendChild(continuation);
-             for (var k = firstOverflow; k < children.length; k++) fragment.appendChild(children[k]);
-             if (continuation && children[firstOverflow].parentNode === fragment) fragment.removeChild(children[firstOverflow]);
+             // When split, the fitting prefix must remain on this page. Only
+             // transfer the extracted continuation and later siblings.
+             for (var k = continuation ? firstOverflow + 1 : firstOverflow; k < children.length; k++) {
+               fragment.appendChild(children[k]);
+             }
              nextSection.insertBefore(fragment, nextSection.firstChild);
              moved = true;
              break;
@@ -789,8 +792,9 @@ function dumpDebugHtml(
         var fragment = document.createDocumentFragment();
         var continuation = splitParagraphAt(children[firstOverflow], safeBottom);
         if (continuation) fragment.appendChild(continuation);
-        for (var k = firstOverflow; k < children.length; k++) fragment.appendChild(children[k]);
-        if (continuation && children[firstOverflow].parentNode === fragment) fragment.removeChild(children[firstOverflow]);
+        for (var k = continuation ? firstOverflow + 1 : firstOverflow; k < children.length; k++) {
+          fragment.appendChild(children[k]);
+        }
         nextSection.insertBefore(fragment, nextSection.firstChild);
         moved = true;
         break;

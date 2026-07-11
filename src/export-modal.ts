@@ -49,12 +49,23 @@ export class ExportModal extends Modal {
       cls: "setting-item-description",
     });
 
-    this.buildControls(contentEl);
+    const workspace = contentEl.createDiv();
+    workspace.style.flex = "1 1 auto";
+    workspace.style.minHeight = "0";
+    workspace.style.display = "flex";
+    workspace.style.gap = "14px";
+    workspace.style.marginTop = "14px";
 
-    this.previewHost = contentEl.createDiv();
+    const sidebar = workspace.createDiv();
+    sidebar.style.flex = "0 0 220px";
+    sidebar.style.minWidth = "0";
+    this.buildControls(sidebar);
+
+    this.previewHost = workspace.createDiv();
+    this.previewHost.style.position = "relative";
     this.previewHost.style.flex = "1 1 auto";
+    this.previewHost.style.width = "0";
     this.previewHost.style.minHeight = "240px";
-    this.previewHost.style.margin = "12px 0 8px";
     this.previewHost.style.overflow = "hidden";
     this.previewHost.style.borderRadius = "6px";
     this.previewHost.style.background = "#fff";
@@ -77,11 +88,9 @@ export class ExportModal extends Modal {
 
   private buildControls(parent: HTMLElement) {
     const row = parent.createDiv();
-    row.style.flex = "0 0 auto";
-    row.style.display = "grid";
-    row.style.gridTemplateColumns = "repeat(5, minmax(130px, 1fr))";
+    row.style.display = "flex";
+    row.style.flexDirection = "column";
     row.style.gap = "1px";
-    row.style.marginTop = "14px";
     row.style.border = "1px solid var(--background-modifier-border)";
     row.style.borderRadius = "6px";
     row.style.overflow = "hidden";
@@ -89,12 +98,14 @@ export class ExportModal extends Modal {
 
     const compact = (setting: Setting): Setting => {
       setting.settingEl.style.minWidth = "0";
-      setting.settingEl.style.padding = "10px 12px";
+      setting.settingEl.style.padding = "12px";
       setting.settingEl.style.border = "0";
       setting.settingEl.style.background = "var(--background-primary)";
       setting.settingEl.style.alignItems = "center";
+      setting.infoEl.style.minWidth = "0";
       setting.nameEl.style.fontSize = "0.85em";
       setting.nameEl.style.whiteSpace = "nowrap";
+      setting.nameEl.style.overflow = "visible";
       return setting;
     };
 
@@ -167,7 +178,11 @@ export class ExportModal extends Modal {
       // Keep the guest surface viewport-sized and scroll inside it. A webview
       // as tall as every page exceeds Electron's compositing limits and turns
       // white after the first screenful.
+      webview.style.position = "absolute";
+      webview.style.inset = "0";
+      webview.style.width = "100%";
       webview.style.height = "100%";
+      webview.style.display = "flex";
 
       const ready = `Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}, ${this.prepared.footnoteCount} footnote${
         this.prepared.footnoteCount === 1 ? "" : "s"

@@ -127,7 +127,7 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       right: var(--pagedjs-margin-right);
       bottom: ${Math.max(s.marginBottom, 10)}mm;
       border-top: 0.5pt solid #999;
-      padding-top: 8pt;
+      padding-top: 12pt;
       overflow: visible;
       box-sizing: border-box;
       background: #fff;
