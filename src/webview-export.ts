@@ -266,10 +266,54 @@ export async function paginateInWebview(
            range.detach();
          }
          Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
-           bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+           // Chromium occasionally omits an image that ends close to its print
+           // clip even though the webview reports it inside the page.
+           bottom = Math.max(bottom, el.getBoundingClientRect().bottom + 64);
          });
          if (bottom === -Infinity) bottom = node.getBoundingClientRect().top;
          return bottom;
+       }
+       function splitParagraphAt(paragraph, safeBottom) {
+         if (!paragraph || paragraph.tagName !== 'P') return null;
+         var walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+         var nodes = [], text;
+         while ((text = walker.nextNode())) if (text.nodeValue && text.nodeValue.trim()) nodes.push(text);
+         var cutNode = null, cutOffset = -1, sawFitting = false;
+         for (var n = 0; n < nodes.length && !cutNode; n++) {
+           text = nodes[n];
+           for (var offset = 0; offset < text.nodeValue.length; offset++) {
+             if (/\s/.test(text.nodeValue.charAt(offset))) continue;
+             var probe = document.createRange();
+             probe.setStart(text, offset);
+             probe.setEnd(text, Math.min(offset + 1, text.nodeValue.length));
+             var rect = probe.getBoundingClientRect();
+             probe.detach();
+             if (!rect.height) continue;
+             var style = text.parentElement ? getComputedStyle(text.parentElement) : null;
+             var lineHeight = style ? parseFloat(style.lineHeight) : 0;
+             var leading = lineHeight > rect.height ? (lineHeight - rect.height) / 2 : 0;
+             if (rect.bottom + leading <= safeBottom + 0.5) { sawFitting = true; continue; }
+             if (!sawFitting) return null;
+             cutNode = text;
+             cutOffset = offset;
+             while (cutOffset > 0 && !/\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+             while (cutOffset > 0 && /\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+             break;
+           }
+         }
+         if (!cutNode || cutOffset < 0) return null;
+         var range = document.createRange();
+         range.setStart(cutNode, cutOffset);
+         range.setEnd(paragraph, paragraph.childNodes.length);
+         var extracted = range.extractContents();
+         range.detach();
+         var continuation = paragraph.cloneNode(false);
+         continuation.removeAttribute('id');
+         continuation.removeAttribute('data-ref');
+         continuation.removeAttribute('data-split-from');
+         continuation.removeAttribute('data-split-to');
+         continuation.appendChild(extracted);
+         return (continuation.textContent || '').trim() || continuation.querySelector('img, svg') ? continuation : null;
        }
        function removeEmptySplitLists() {
          var lists = Array.prototype.slice.call(dest.querySelectorAll('ol, ul'));
@@ -322,7 +366,10 @@ export async function paginateInWebview(
              // Moving one node at a time can reverse split fragments and leave
              // following content behind an earlier overflowing paragraph.
              var fragment = document.createDocumentFragment();
+             var continuation = splitParagraphAt(children[firstOverflow], safeBottom);
+             if (continuation) fragment.appendChild(continuation);
              for (var k = firstOverflow; k < children.length; k++) fragment.appendChild(children[k]);
+             if (continuation && children[firstOverflow].parentNode === fragment) fragment.removeChild(children[firstOverflow]);
              nextSection.insertBefore(fragment, nextSection.firstChild);
              moved = true;
              break;
@@ -645,10 +692,52 @@ function dumpDebugHtml(
       range.detach();
     }
     Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
-      bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+      bottom = Math.max(bottom, el.getBoundingClientRect().bottom + 64);
     });
     if (bottom === -Infinity) bottom = node.getBoundingClientRect().top;
     return bottom;
+  }
+  function splitParagraphAt(paragraph, safeBottom) {
+    if (!paragraph || paragraph.tagName !== 'P') return null;
+    var walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+    var nodes = [], text;
+    while ((text = walker.nextNode())) if (text.nodeValue && text.nodeValue.trim()) nodes.push(text);
+    var cutNode = null, cutOffset = -1, sawFitting = false;
+    for (var n = 0; n < nodes.length && !cutNode; n++) {
+      text = nodes[n];
+      for (var offset = 0; offset < text.nodeValue.length; offset++) {
+        if (/\s/.test(text.nodeValue.charAt(offset))) continue;
+        var probe = document.createRange();
+        probe.setStart(text, offset);
+        probe.setEnd(text, Math.min(offset + 1, text.nodeValue.length));
+        var rect = probe.getBoundingClientRect();
+        probe.detach();
+        if (!rect.height) continue;
+        var style = text.parentElement ? getComputedStyle(text.parentElement) : null;
+        var lineHeight = style ? parseFloat(style.lineHeight) : 0;
+        var leading = lineHeight > rect.height ? (lineHeight - rect.height) / 2 : 0;
+        if (rect.bottom + leading <= safeBottom + 0.5) { sawFitting = true; continue; }
+        if (!sawFitting) return null;
+        cutNode = text;
+        cutOffset = offset;
+        while (cutOffset > 0 && !/\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+        while (cutOffset > 0 && /\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+        break;
+      }
+    }
+    if (!cutNode || cutOffset < 0) return null;
+    var range = document.createRange();
+    range.setStart(cutNode, cutOffset);
+    range.setEnd(paragraph, paragraph.childNodes.length);
+    var extracted = range.extractContents();
+    range.detach();
+    var continuation = paragraph.cloneNode(false);
+    continuation.removeAttribute('id');
+    continuation.removeAttribute('data-ref');
+    continuation.removeAttribute('data-split-from');
+    continuation.removeAttribute('data-split-to');
+    continuation.appendChild(extracted);
+    return (continuation.textContent || '').trim() || continuation.querySelector('img, svg') ? continuation : null;
   }
   function removeEmptySplitLists(dest) {
     var lists = Array.prototype.slice.call(dest.querySelectorAll('ol, ul'));
@@ -698,7 +787,10 @@ function dumpDebugHtml(
         var nextSection = pageSection(nextPage);
         if (!nextSection) break;
         var fragment = document.createDocumentFragment();
+        var continuation = splitParagraphAt(children[firstOverflow], safeBottom);
+        if (continuation) fragment.appendChild(continuation);
         for (var k = firstOverflow; k < children.length; k++) fragment.appendChild(children[k]);
+        if (continuation && children[firstOverflow].parentNode === fragment) fragment.removeChild(children[firstOverflow]);
         nextSection.insertBefore(fragment, nextSection.firstChild);
         moved = true;
         break;
