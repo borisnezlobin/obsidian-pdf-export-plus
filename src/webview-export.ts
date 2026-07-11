@@ -211,8 +211,8 @@ export async function paginateInWebview(
        }
        function mergeSplitParagraphs() {
          var firstByRef = {};
-         Array.prototype.slice.call(dest.querySelectorAll('p[data-ref]')).forEach(function (paragraph) {
-           var ref = paragraph.getAttribute('data-ref');
+         Array.prototype.slice.call(dest.querySelectorAll('p[data-ref], p[data-split-from]')).forEach(function (paragraph) {
+           var ref = paragraph.getAttribute('data-ref') || paragraph.getAttribute('data-split-from');
            if (!ref) return;
            var first = firstByRef[ref];
            if (!first) {
@@ -350,7 +350,37 @@ export async function paginateInWebview(
          continuation.removeAttribute('data-split-from');
          continuation.removeAttribute('data-split-to');
          continuation.appendChild(extracted);
+         repairSplitWord(paragraph, continuation);
          return (continuation.textContent || '').trim() || continuation.querySelector('img, svg') ? continuation : null;
+       }
+       function repairSplitWord(prefix, continuation) {
+         var before = prefix.textContent || '';
+         var after = continuation.textContent || '';
+         if (!/[\\p{L}\\p{N}]$/u.test(before) || !/^[\\p{L}\\p{N}]/u.test(after)) return;
+         var walker = document.createTreeWalker(prefix, NodeFilter.SHOW_TEXT);
+         var nodes = [], text;
+         while ((text = walker.nextNode())) if (text.nodeValue && text.nodeValue.length) nodes.push(text);
+         if (!nodes.length) return;
+         var index = nodes.length - 1;
+         var startNode = nodes[index];
+         var startOffset = startNode.nodeValue.length;
+         while (true) {
+           while (startOffset > 0 && /[\\p{L}\\p{N}]/u.test(startNode.nodeValue.charAt(startOffset - 1))) startOffset--;
+           if (startOffset > 0 || index === 0) break;
+           var previous = nodes[index - 1];
+           if (!previous.nodeValue || !/[\\p{L}\\p{N}]$/u.test(previous.nodeValue)) break;
+           startNode = previous;
+           startOffset = previous.nodeValue.length;
+           index--;
+         }
+         var range = document.createRange();
+         range.setStart(startNode, startOffset);
+         range.setEnd(prefix, prefix.childNodes.length);
+         var partial = range.extractContents();
+         range.detach();
+         continuation.insertBefore(partial, continuation.firstChild);
+         prefix.normalize();
+         continuation.normalize();
        }
        function removeEmptySplitLists() {
          var lists = Array.prototype.slice.call(dest.querySelectorAll('ol, ul'));
@@ -674,8 +704,8 @@ function dumpDebugHtml(
   }
   function mergeSplitParagraphs(dest) {
     var firstByRef = {};
-    Array.prototype.slice.call(dest.querySelectorAll('p[data-ref]')).forEach(function (paragraph) {
-      var ref = paragraph.getAttribute('data-ref');
+    Array.prototype.slice.call(dest.querySelectorAll('p[data-ref], p[data-split-from]')).forEach(function (paragraph) {
+      var ref = paragraph.getAttribute('data-ref') || paragraph.getAttribute('data-split-from');
       if (!ref) return;
       var first = firstByRef[ref];
       if (!first) {
@@ -805,7 +835,37 @@ function dumpDebugHtml(
     continuation.removeAttribute('data-split-from');
     continuation.removeAttribute('data-split-to');
     continuation.appendChild(extracted);
+    repairSplitWord(paragraph, continuation);
     return (continuation.textContent || '').trim() || continuation.querySelector('img, svg') ? continuation : null;
+  }
+  function repairSplitWord(prefix, continuation) {
+    var before = prefix.textContent || '';
+    var after = continuation.textContent || '';
+    if (!/[\\p{L}\\p{N}]$/u.test(before) || !/^[\\p{L}\\p{N}]/u.test(after)) return;
+    var walker = document.createTreeWalker(prefix, NodeFilter.SHOW_TEXT);
+    var nodes = [], text;
+    while ((text = walker.nextNode())) if (text.nodeValue && text.nodeValue.length) nodes.push(text);
+    if (!nodes.length) return;
+    var index = nodes.length - 1;
+    var startNode = nodes[index];
+    var startOffset = startNode.nodeValue.length;
+    while (true) {
+      while (startOffset > 0 && /[\\p{L}\\p{N}]/u.test(startNode.nodeValue.charAt(startOffset - 1))) startOffset--;
+      if (startOffset > 0 || index === 0) break;
+      var previous = nodes[index - 1];
+      if (!previous.nodeValue || !/[\\p{L}\\p{N}]$/u.test(previous.nodeValue)) break;
+      startNode = previous;
+      startOffset = previous.nodeValue.length;
+      index--;
+    }
+    var range = document.createRange();
+    range.setStart(startNode, startOffset);
+    range.setEnd(prefix, prefix.childNodes.length);
+    var partial = range.extractContents();
+    range.detach();
+    continuation.insertBefore(partial, continuation.firstChild);
+    prefix.normalize();
+    continuation.normalize();
   }
   function removeEmptySplitLists(dest) {
     var lists = Array.prototype.slice.call(dest.querySelectorAll('ol, ul'));
