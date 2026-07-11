@@ -10,7 +10,7 @@ import {
   writePdf,
 } from "./export";
 import { PdfFootnotesSettings } from "./settings";
-import { measureContentHeight, paginateInWebview, printWebviewToPdf } from "./webview-export";
+import { paginateInWebview, printWebviewToPdf } from "./webview-export";
 
 // A BEPDF-style export dialog: it renders a live paginated PREVIEW (the actual
 // Paged.js output, footnotes at page bottoms), lets you adjust options, and
@@ -32,26 +32,36 @@ export class ExportModal extends Modal {
   }
 
   onOpen() {
-    this.modalEl.style.width = "min(900px, 92vw)";
+    this.modalEl.style.width = "min(1100px, 94vw)";
+    this.modalEl.style.height = "min(900px, 92vh)";
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.createEl("h3", { text: `Export "${this.file.basename}" to PDF` });
-    contentEl.createEl("p", {
-      text: "Footnotes are placed at the bottom of the page they're referenced on. The preview below is exactly what exports.",
+    contentEl.style.height = "100%";
+    contentEl.style.display = "flex";
+    contentEl.style.flexDirection = "column";
+    contentEl.style.overflow = "hidden";
+
+    const header = contentEl.createDiv();
+    header.style.flex = "0 0 auto";
+    header.createEl("h3", { text: `Export "${this.file.basename}" to PDF` });
+    header.createEl("p", {
+      text: "Footnotes are placed on the page where they are referenced.",
       cls: "setting-item-description",
     });
 
     this.buildControls(contentEl);
 
     this.previewHost = contentEl.createDiv();
-    this.previewHost.style.height = "52vh";
-    this.previewHost.style.margin = "0.6em 0";
-    this.previewHost.style.overflow = "auto";
+    this.previewHost.style.flex = "1 1 auto";
+    this.previewHost.style.minHeight = "240px";
+    this.previewHost.style.margin = "12px 0 8px";
+    this.previewHost.style.overflow = "hidden";
     this.previewHost.style.borderRadius = "6px";
     this.previewHost.style.background = "#fff";
     this.previewHost.style.boxShadow = "inset 0 0 0 1px var(--background-modifier-border)";
 
     this.statusEl = contentEl.createDiv();
+    this.statusEl.style.flex = "0 0 auto";
     this.statusEl.style.minHeight = "1.4em";
     this.statusEl.style.color = "var(--text-muted)";
     this.statusEl.style.fontSize = "0.9em";
@@ -67,11 +77,28 @@ export class ExportModal extends Modal {
 
   private buildControls(parent: HTMLElement) {
     const row = parent.createDiv();
-    row.style.display = "flex";
-    row.style.flexWrap = "wrap";
-    row.style.gap = "0.2em 1.5em";
+    row.style.flex = "0 0 auto";
+    row.style.display = "grid";
+    row.style.gridTemplateColumns = "repeat(5, minmax(130px, 1fr))";
+    row.style.gap = "1px";
+    row.style.marginTop = "14px";
+    row.style.border = "1px solid var(--background-modifier-border)";
+    row.style.borderRadius = "6px";
+    row.style.overflow = "hidden";
+    row.style.background = "var(--background-modifier-border)";
 
-    new Setting(row).setName("Page size").addDropdown((d) =>
+    const compact = (setting: Setting): Setting => {
+      setting.settingEl.style.minWidth = "0";
+      setting.settingEl.style.padding = "10px 12px";
+      setting.settingEl.style.border = "0";
+      setting.settingEl.style.background = "var(--background-primary)";
+      setting.settingEl.style.alignItems = "center";
+      setting.nameEl.style.fontSize = "0.85em";
+      setting.nameEl.style.whiteSpace = "nowrap";
+      return setting;
+    };
+
+    compact(new Setting(row)).setName("Page size").addDropdown((d) =>
       d
         .addOptions({ A4: "A4", Letter: "Letter", Legal: "Legal", A3: "A3", A5: "A5", Tabloid: "Tabloid" })
         .setValue(this.opts.pageSize)
@@ -80,29 +107,31 @@ export class ExportModal extends Modal {
           void this.buildPreview();
         })
     );
-    new Setting(row).setName("Page numbers").addToggle((t) =>
+    compact(new Setting(row)).setName("Page numbers").addToggle((t) =>
       t.setValue(this.opts.showPageNumbers).onChange((v) => {
         this.opts.showPageNumbers = v;
         void this.buildPreview();
       })
     );
-    new Setting(row).setName("Title heading").addToggle((t) =>
+    compact(new Setting(row)).setName("Title heading").addToggle((t) =>
       t.setValue(this.opts.includeTitle).onChange((v) => {
         this.opts.includeTitle = v;
         this.prepared = null; // title is baked into the rendered HTML — re-render
         void this.buildPreview();
       })
     );
-    new Setting(row)
+    compact(new Setting(row))
       .setName("Backgrounds")
       .addToggle((t) => t.setValue(this.opts.printBackground).onChange((v) => (this.opts.printBackground = v)));
-    new Setting(row)
+    compact(new Setting(row))
       .setName("Open after export")
       .addToggle((t) => t.setValue(this.opts.openAfterExport).onChange((v) => (this.opts.openAfterExport = v)));
   }
 
   private buildButtons(parent: HTMLElement) {
     const bar = new Setting(parent);
+    bar.settingEl.style.flex = "0 0 auto";
+    bar.settingEl.style.padding = "10px 0 0";
     bar.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
     bar.addButton((b) => {
       this.exportBtn = b;
@@ -135,11 +164,10 @@ export class ExportModal extends Modal {
         (stage) => this.setStatus(stage)
       );
       this.webview = webview;
-
-      // Size the webview to the full paginated height so the fixed-height host
-      // scrolls through every page (a webview at 100% height just clips).
-      const contentHeight = await measureContentHeight(webview);
-      if (contentHeight > 0) webview.style.height = contentHeight + "px";
+      // Keep the guest surface viewport-sized and scroll inside it. A webview
+      // as tall as every page exceeds Electron's compositing limits and turns
+      // white after the first screenful.
+      webview.style.height = "100%";
 
       const ready = `Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}, ${this.prepared.footnoteCount} footnote${
         this.prepared.footnoteCount === 1 ? "" : "s"
@@ -164,7 +192,7 @@ export class ExportModal extends Modal {
       }
       if (maxRun >= 8) {
         this.setStatus(
-          `⚠ A passage may be missing from the pages ("${excerpt.slice(0, 60)}…"). Check the preview before exporting.`,
+          `Possible missing passage: "${excerpt.slice(0, 60)}…". Review the paginated preview before exporting.`,
           true
         );
         console.warn(`[PDF Footnotes] possible dropped passage (run=${maxRun}):`, excerpt);
