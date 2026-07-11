@@ -225,6 +225,7 @@ export async function paginateInWebview(
            while (paragraph.firstChild) first.appendChild(paragraph.firstChild);
            paragraph.remove();
          });
+         Object.keys(firstByRef).forEach(function (ref) { firstByRef[ref].normalize(); });
        }
        function placeManualPageNumbers() {
          if (!${settings.showPageNumbers ? "true" : "false"}) return;
@@ -323,8 +324,17 @@ export async function paginateInWebview(
              if (!sawFitting) return null;
              cutNode = text;
              cutOffset = offset;
-             while (cutOffset > 0 && !/\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
-             while (cutOffset > 0 && /\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+             var cutIndex = n;
+             while (true) {
+               while (cutOffset > 0 && !/\s/.test(cutNode.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+               if (cutOffset > 0 || cutIndex === 0) break;
+               var previous = nodes[cutIndex - 1];
+               if (!previous.nodeValue || !previous.nodeValue.length || /\s/.test(previous.nodeValue.slice(-1))) break;
+               cutNode = previous;
+               cutOffset = previous.nodeValue.length;
+               cutIndex--;
+             }
+             while (cutOffset > 0 && /\s/.test(cutNode.nodeValue.charAt(cutOffset - 1))) cutOffset--;
              break;
            }
          }
@@ -678,6 +688,7 @@ function dumpDebugHtml(
       while (paragraph.firstChild) first.appendChild(paragraph.firstChild);
       paragraph.remove();
     });
+    Object.keys(firstByRef).forEach(function (ref) { firstByRef[ref].normalize(); });
   }
   function placeManualPageNumbers(dest) {
     var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
@@ -768,8 +779,17 @@ function dumpDebugHtml(
         if (!sawFitting) return null;
         cutNode = text;
         cutOffset = offset;
-        while (cutOffset > 0 && !/\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
-        while (cutOffset > 0 && /\s/.test(text.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+        var cutIndex = n;
+        while (true) {
+          while (cutOffset > 0 && !/\s/.test(cutNode.nodeValue.charAt(cutOffset - 1))) cutOffset--;
+          if (cutOffset > 0 || cutIndex === 0) break;
+          var previous = nodes[cutIndex - 1];
+          if (!previous.nodeValue || !previous.nodeValue.length || /\s/.test(previous.nodeValue.slice(-1))) break;
+          cutNode = previous;
+          cutOffset = previous.nodeValue.length;
+          cutIndex--;
+        }
+        while (cutOffset > 0 && /\s/.test(cutNode.nodeValue.charAt(cutOffset - 1))) cutOffset--;
         break;
       }
     }
