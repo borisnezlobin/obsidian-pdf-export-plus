@@ -33,22 +33,6 @@ const PATCH_CSS = `
   .markdown-preview-view, .markdown-preview-sizer, .print-root {
     width: 100% !important; max-width: none !important; height: auto !important;
   }
-  /* A Style Settings / theme snippet can define runaway typography variables —
-     e.g. --line-height-customize: 25, applied via
-     '.markdown-preview-view { line-height: var(--line-height-customize) }'.
-     They resolve correctly in the live app (whose theme <link> sheets scope
-     them), but collected flat into the export — where those app:// sheets fail
-     to load in the webview — the raw 25 lands on our .markdown-preview-view
-     container as a unitless multiplier: 25 × 19px ≈ 480px per line. Pages then
-     hold ~2 lines and look almost entirely blank. Pin the line-height variables
-     to Obsidian's defaults on the print content so exported text is spaced like
-     the reading view. */
-  .print-root, .markdown-preview-view {
-    --line-height-normal: 1.5 !important;
-    --line-height-tight: 1.3 !important;
-    --line-height: 1.5 !important;
-    --line-height-customize: 1.5 !important;
-  }
 `;
 
 export async function paginateInWebview(
@@ -249,16 +233,30 @@ export async function paginateInWebview(
          return clone;
        }
        function pageSafeBottom(page) {
-         var pr = page.getBoundingClientRect();
-         // Chromium's printed page clips before Paged.js's on-screen content
-         // box in a few split-block cases. Use a conservative physical page
-         // boundary, then further shrink it for footnotes/page numbers.
-         var safe = pr.bottom - 120;
+         var content = page.querySelector('.pagedjs_page_content');
+         var safe = content ? content.getBoundingClientRect().bottom : page.getBoundingClientRect().bottom;
          var area = page.querySelector('.pdf-manual-footnotes');
-         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 16);
-         var pageNumber = page.querySelector('.pdf-manual-page-number');
-         if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 24);
+         // The box has its natural, measured height, so pages without notes
+         // reserve nothing and pages with notes reserve exactly what they need.
+         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 12);
          return safe;
+       }
+       function visualBottom(node) {
+         var bottom = node.getBoundingClientRect().bottom;
+         var walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+         var text;
+         while ((text = walker.nextNode())) {
+           if (!text.nodeValue || !text.nodeValue.trim()) continue;
+           var range = document.createRange();
+           range.selectNodeContents(text);
+           var rects = range.getClientRects();
+           for (var i = 0; i < rects.length; i++) bottom = Math.max(bottom, rects[i].bottom);
+           range.detach();
+         }
+         Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
+           bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+         });
+         return bottom;
        }
        function moveCollidingBlocks() {
          var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
@@ -269,18 +267,29 @@ export async function paginateInWebview(
            var section = pageSection(page);
            if (!section) continue;
            var guard = 0;
-           while (guard++ < 12) {
+           while (guard++ < 24) {
              var children = Array.prototype.slice.call(section.children).filter(function (child) {
                if (child.classList && (child.classList.contains('pdf-footnote-data') || child.classList.contains('pdf-footnote-target'))) return false;
                var r = child.getBoundingClientRect();
-               return r.height > 0 && r.bottom > safeBottom;
+               return r.height > 0;
              });
              if (!children.length) break;
+             var firstOverflow = -1;
+             for (var j = 0; j < children.length; j++) {
+               if (visualBottom(children[j]) > safeBottom + 0.5) { firstOverflow = j; break; }
+             }
+             if (firstOverflow < 0) break;
              var nextPage = ensureNextPage(pages, i);
              var nextSection = pageSection(nextPage);
              if (!nextSection) break;
-             nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
+             // Move the overflowing element and everything after it together.
+             // Moving one node at a time can reverse split fragments and leave
+             // following content behind an earlier overflowing paragraph.
+             var fragment = document.createDocumentFragment();
+             for (var k = firstOverflow; k < children.length; k++) fragment.appendChild(children[k]);
+             nextSection.insertBefore(fragment, nextSection.firstChild);
              moved = true;
+             break;
            }
          }
          return moved;
@@ -571,13 +580,28 @@ function dumpDebugHtml(
     return clone;
   }
   function pageSafeBottom(page) {
-    var pr = page.getBoundingClientRect();
-    var safe = pr.bottom - 120;
+    var content = page.querySelector('.pagedjs_page_content');
+    var safe = content ? content.getBoundingClientRect().bottom : page.getBoundingClientRect().bottom;
     var area = page.querySelector('.pdf-manual-footnotes');
-    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 16);
-    var pageNumber = page.querySelector('.pdf-manual-page-number');
-    if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 24);
+    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 12);
     return safe;
+  }
+  function visualBottom(node) {
+    var bottom = node.getBoundingClientRect().bottom;
+    var walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    var text;
+    while ((text = walker.nextNode())) {
+      if (!text.nodeValue || !text.nodeValue.trim()) continue;
+      var range = document.createRange();
+      range.selectNodeContents(text);
+      var rects = range.getClientRects();
+      for (var i = 0; i < rects.length; i++) bottom = Math.max(bottom, rects[i].bottom);
+      range.detach();
+    }
+    Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
+      bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
+    });
+    return bottom;
   }
   function moveCollidingBlocks(dest) {
     var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
@@ -588,18 +612,26 @@ function dumpDebugHtml(
       var section = pageSection(page);
       if (!section) continue;
       var guard = 0;
-      while (guard++ < 12) {
+      while (guard++ < 24) {
         var children = Array.prototype.slice.call(section.children).filter(function (child) {
           if (child.classList && (child.classList.contains('pdf-footnote-data') || child.classList.contains('pdf-footnote-target'))) return false;
           var r = child.getBoundingClientRect();
-          return r.height > 0 && r.bottom > safeBottom;
+          return r.height > 0;
         });
         if (!children.length) break;
+        var firstOverflow = -1;
+        for (var j = 0; j < children.length; j++) {
+          if (visualBottom(children[j]) > safeBottom + 0.5) { firstOverflow = j; break; }
+        }
+        if (firstOverflow < 0) break;
         var nextPage = ensureNextPage(pages, i);
         var nextSection = pageSection(nextPage);
         if (!nextSection) break;
-        nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
+        var fragment = document.createDocumentFragment();
+        for (var k = firstOverflow; k < children.length; k++) fragment.appendChild(children[k]);
+        nextSection.insertBefore(fragment, nextSection.firstChild);
         moved = true;
+        break;
       }
     }
     return moved;
