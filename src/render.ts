@@ -17,7 +17,7 @@ export async function renderNoteToHtml(
   const component = new Component();
   component.load();
   try {
-    await MarkdownRenderer.render(app, markdown, sizer, sourcePath, component);
+    await MarkdownRenderer.render(app, separateTrailingListParagraphs(markdown), sizer, sourcePath, component);
   } finally {
     component.unload();
   }
@@ -25,6 +25,20 @@ export async function renderNoteToHtml(
   hoistImageEmbeds(container);
   await inlineImages(app, container, sourcePath);
   return container;
+}
+
+// Obsidian's detached MarkdownRenderer can absorb an unindented line directly
+// after a list into the final <li>, even though Reading view presents it as a
+// separate paragraph. Make that boundary explicit before rendering.
+function separateTrailingListParagraphs(markdown: string): string {
+  const lines = markdown.split("\n");
+  const isListItem = (line: string) => /^\s*(?:[-+*]|\d+[.)])\s+\S/.test(line);
+  for (let i = lines.length - 1; i > 0; i--) {
+    if (lines[i].trim() && !/^\s/.test(lines[i]) && !isListItem(lines[i]) && isListItem(lines[i - 1])) {
+      lines.splice(i, 0, "");
+    }
+  }
+  return lines.join("\n");
 }
 
 // MarkdownRenderer puts image embeds INLINE inside a paragraph

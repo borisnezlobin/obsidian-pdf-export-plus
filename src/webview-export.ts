@@ -237,7 +237,7 @@ export async function paginateInWebview(
          var pageRect = page.getBoundingClientRect();
          var safe = Math.min(
            content ? content.getBoundingClientRect().bottom : pageRect.bottom,
-           pageRect.bottom - 120
+           pageRect.bottom - 150
          );
          var area = page.querySelector('.pdf-manual-footnotes');
          // The box has its natural, measured height, so pages without notes
@@ -257,7 +257,12 @@ export async function paginateInWebview(
            var range = document.createRange();
            range.selectNodeContents(text);
            var rects = range.getClientRects();
-           for (var i = 0; i < rects.length; i++) bottom = Math.max(bottom, rects[i].bottom);
+           var style = text.parentElement ? getComputedStyle(text.parentElement) : null;
+           var lineHeight = style ? parseFloat(style.lineHeight) : 0;
+           for (var i = 0; i < rects.length; i++) {
+             var leading = lineHeight > rects[i].height ? (lineHeight - rects[i].height) / 2 : 0;
+             bottom = Math.max(bottom, rects[i].bottom + leading);
+           }
            range.detach();
          }
          Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
@@ -267,11 +272,26 @@ export async function paginateInWebview(
          return bottom;
        }
        function removeEmptySplitLists() {
-         Array.prototype.slice.call(dest.querySelectorAll('ol, ul')).forEach(function (list) {
-           var items = Array.prototype.slice.call(list.children).filter(function (n) { return n.tagName === 'LI'; });
-           if (items.length && items.every(function (li) {
-             return !(li.textContent || '').trim() && !li.querySelector('img, svg, table');
-           })) list.remove();
+         var lists = Array.prototype.slice.call(dest.querySelectorAll('ol, ul'));
+         lists.forEach(function (list, listIndex) {
+           Array.prototype.slice.call(list.children).forEach(function (li) {
+             if (li.tagName !== 'LI' || (li.textContent || '').trim() || li.querySelector('img, svg, table')) return;
+             var ref = li.getAttribute('data-ref');
+             if (ref) {
+               for (var i = listIndex + 1; i < lists.length; i++) {
+                 var continuation = Array.prototype.slice.call(lists[i].children).find(function (n) {
+                   return n.tagName === 'LI' && n.getAttribute('data-ref') === ref && n.hasAttribute('data-split-from');
+                 });
+                 if (continuation) {
+                   lists[i].removeAttribute('data-split-from');
+                   continuation.removeAttribute('data-split-from');
+                   break;
+                 }
+               }
+             }
+             li.remove();
+           });
+           if (!list.querySelector('li')) list.remove();
          });
        }
        function moveCollidingBlocks() {
@@ -601,7 +621,7 @@ function dumpDebugHtml(
     var pageRect = page.getBoundingClientRect();
     var safe = Math.min(
       content ? content.getBoundingClientRect().bottom : pageRect.bottom,
-      pageRect.bottom - 120
+      pageRect.bottom - 150
     );
     var area = page.querySelector('.pdf-manual-footnotes');
     if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 24);
@@ -616,7 +636,12 @@ function dumpDebugHtml(
       var range = document.createRange();
       range.selectNodeContents(text);
       var rects = range.getClientRects();
-      for (var i = 0; i < rects.length; i++) bottom = Math.max(bottom, rects[i].bottom);
+      var style = text.parentElement ? getComputedStyle(text.parentElement) : null;
+      var lineHeight = style ? parseFloat(style.lineHeight) : 0;
+      for (var i = 0; i < rects.length; i++) {
+        var leading = lineHeight > rects[i].height ? (lineHeight - rects[i].height) / 2 : 0;
+        bottom = Math.max(bottom, rects[i].bottom + leading);
+      }
       range.detach();
     }
     Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
@@ -626,11 +651,26 @@ function dumpDebugHtml(
     return bottom;
   }
   function removeEmptySplitLists(dest) {
-    Array.prototype.slice.call(dest.querySelectorAll('ol, ul')).forEach(function (list) {
-      var items = Array.prototype.slice.call(list.children).filter(function (n) { return n.tagName === 'LI'; });
-      if (items.length && items.every(function (li) {
-        return !(li.textContent || '').trim() && !li.querySelector('img, svg, table');
-      })) list.remove();
+    var lists = Array.prototype.slice.call(dest.querySelectorAll('ol, ul'));
+    lists.forEach(function (list, listIndex) {
+      Array.prototype.slice.call(list.children).forEach(function (li) {
+        if (li.tagName !== 'LI' || (li.textContent || '').trim() || li.querySelector('img, svg, table')) return;
+        var ref = li.getAttribute('data-ref');
+        if (ref) {
+          for (var i = listIndex + 1; i < lists.length; i++) {
+            var continuation = Array.prototype.slice.call(lists[i].children).find(function (n) {
+              return n.tagName === 'LI' && n.getAttribute('data-ref') === ref && n.hasAttribute('data-split-from');
+            });
+            if (continuation) {
+              lists[i].removeAttribute('data-split-from');
+              continuation.removeAttribute('data-split-from');
+              break;
+            }
+          }
+        }
+        li.remove();
+      });
+      if (!list.querySelector('li')) list.remove();
     });
   }
   function moveCollidingBlocks(dest) {

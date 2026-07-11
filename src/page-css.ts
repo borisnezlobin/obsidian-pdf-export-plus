@@ -35,6 +35,8 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       display: block;
       break-inside: avoid;
       text-align: center;
+      position: relative;
+      z-index: 1;
     }
 
     /* Keep images well shorter than a page so one ALWAYS fits in the space left
@@ -49,6 +51,8 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       max-height: 120mm;
       height: auto;
       break-inside: avoid;
+      position: relative;
+      z-index: 1;
     }
     .print-root table {
       max-width: 100%;
