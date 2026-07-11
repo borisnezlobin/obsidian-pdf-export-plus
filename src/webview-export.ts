@@ -33,6 +33,22 @@ const PATCH_CSS = `
   .markdown-preview-view, .markdown-preview-sizer, .print-root {
     width: 100% !important; max-width: none !important; height: auto !important;
   }
+  /* A Style Settings / theme snippet can define runaway typography variables —
+     e.g. --line-height-customize: 25, applied via
+     '.markdown-preview-view { line-height: var(--line-height-customize) }'.
+     They resolve correctly in the live app (whose theme <link> sheets scope
+     them), but collected flat into the export — where those app:// sheets fail
+     to load in the webview — the raw 25 lands on our .markdown-preview-view
+     container as a unitless multiplier: 25 × 19px ≈ 480px per line. Pages then
+     hold ~2 lines and look almost entirely blank. Pin the line-height variables
+     to Obsidian's defaults on the print content so exported text is spaced like
+     the reading view. */
+  .print-root, .markdown-preview-view {
+    --line-height-normal: 1.5 !important;
+    --line-height-tight: 1.3 !important;
+    --line-height: 1.5 !important;
+    --line-height-customize: 1.5 !important;
+  }
 `;
 
 export async function paginateInWebview(
