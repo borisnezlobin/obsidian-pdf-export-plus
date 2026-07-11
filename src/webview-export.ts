@@ -234,15 +234,22 @@ export async function paginateInWebview(
        }
        function pageSafeBottom(page) {
          var content = page.querySelector('.pagedjs_page_content');
-         var safe = content ? content.getBoundingClientRect().bottom : page.getBoundingClientRect().bottom;
+         var pageRect = page.getBoundingClientRect();
+         var safe = Math.min(
+           content ? content.getBoundingClientRect().bottom : pageRect.bottom,
+           pageRect.bottom - 120
+         );
          var area = page.querySelector('.pdf-manual-footnotes');
          // The box has its natural, measured height, so pages without notes
          // reserve nothing and pages with notes reserve exactly what they need.
-         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 12);
+         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 24);
          return safe;
        }
        function visualBottom(node) {
-         var bottom = node.getBoundingClientRect().bottom;
+         // Element rectangles include collapsing margins. Using them made a
+         // fitting paragraph look overfull and moved the whole paragraph,
+         // leaving most of a page blank. Measure painted lines/media instead.
+         var bottom = -Infinity;
          var walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
          var text;
          while ((text = walker.nextNode())) {
@@ -256,7 +263,16 @@ export async function paginateInWebview(
          Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
            bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
          });
+         if (bottom === -Infinity) bottom = node.getBoundingClientRect().top;
          return bottom;
+       }
+       function removeEmptySplitLists() {
+         Array.prototype.slice.call(dest.querySelectorAll('ol, ul')).forEach(function (list) {
+           var items = Array.prototype.slice.call(list.children).filter(function (n) { return n.tagName === 'LI'; });
+           if (items.length && items.every(function (li) {
+             return !(li.textContent || '').trim() && !li.querySelector('img, svg, table');
+           })) list.remove();
+         });
        }
        function moveCollidingBlocks() {
          var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
@@ -304,6 +320,7 @@ export async function paginateInWebview(
          clearManualDecorations();
          placeManualFootnotes();
          placeManualPageNumbers();
+         removeEmptySplitLists();
        }
        window.PagedPolyfill.preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
          .then(function (f) {
@@ -581,13 +598,17 @@ function dumpDebugHtml(
   }
   function pageSafeBottom(page) {
     var content = page.querySelector('.pagedjs_page_content');
-    var safe = content ? content.getBoundingClientRect().bottom : page.getBoundingClientRect().bottom;
+    var pageRect = page.getBoundingClientRect();
+    var safe = Math.min(
+      content ? content.getBoundingClientRect().bottom : pageRect.bottom,
+      pageRect.bottom - 120
+    );
     var area = page.querySelector('.pdf-manual-footnotes');
-    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 12);
+    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 24);
     return safe;
   }
   function visualBottom(node) {
-    var bottom = node.getBoundingClientRect().bottom;
+    var bottom = -Infinity;
     var walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
     var text;
     while ((text = walker.nextNode())) {
@@ -601,7 +622,16 @@ function dumpDebugHtml(
     Array.prototype.slice.call(node.querySelectorAll('img, svg, video, table')).forEach(function (el) {
       bottom = Math.max(bottom, el.getBoundingClientRect().bottom);
     });
+    if (bottom === -Infinity) bottom = node.getBoundingClientRect().top;
     return bottom;
+  }
+  function removeEmptySplitLists(dest) {
+    Array.prototype.slice.call(dest.querySelectorAll('ol, ul')).forEach(function (list) {
+      var items = Array.prototype.slice.call(list.children).filter(function (n) { return n.tagName === 'LI'; });
+      if (items.length && items.every(function (li) {
+        return !(li.textContent || '').trim() && !li.querySelector('img, svg, table');
+      })) list.remove();
+    });
   }
   function moveCollidingBlocks(dest) {
     var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
@@ -646,6 +676,7 @@ function dumpDebugHtml(
     clearManualDecorations(dest);
     placeManualFootnotes(src, dest);
     ${settings.showPageNumbers ? "placeManualPageNumbers(dest);" : ""}
+    removeEmptySplitLists(dest);
   }
   window.addEventListener("load", function () {
     var src = document.getElementById("pf-src"), dest = document.getElementById("pf-dest");
