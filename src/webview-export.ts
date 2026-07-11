@@ -63,7 +63,7 @@ export async function paginateInWebview(
   const pageCssText = buildPageCss(settings);
 
   if (settings.debugDump) {
-    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText, settings);
+    dumpDebugHtml(bodyHtml, theme, styleSheets, printStyles, pageCssText);
   }
 
   onProgress("Opening preview…");
@@ -110,7 +110,6 @@ export async function paginateInWebview(
        for (var i = 0; i < nodes.length; i++) {
          var el = nodes[i];
          try {
-           if (el.classList && el.classList.contains('pdf-footnote-data')) continue;
            if (getComputedStyle(el).display !== 'none') continue;
            // keep it if any descendant is actually visible
            var kids = el.querySelectorAll('*'), visibleChild = false;
@@ -158,150 +157,11 @@ export async function paginateInWebview(
     `(function () {
        var src = document.getElementById('pf-src');
        var dest = document.getElementById('pf-dest');
-       window.__manualFootnotes = Array.prototype.slice.call(src.querySelectorAll('[data-pdf-footnote]')).map(function (n) {
-         return {
-           id: n.getAttribute('data-pdf-footnote') || '',
-           html: n.innerHTML || ''
-         };
-       });
-       function footnoteData(id) {
-         for (var i = 0; i < window.__manualFootnotes.length; i++) {
-           if (window.__manualFootnotes[i].id === id) return window.__manualFootnotes[i];
-         }
-         return null;
-       }
-       function placeManualFootnotes() {
-         var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
-         var buckets = pages.map(function () { return []; });
-         var seen = {};
-         Array.prototype.slice.call(dest.querySelectorAll('[data-pdf-footnote-ref]')).forEach(function (ref) {
-           var id = ref.getAttribute('data-pdf-footnote-ref') || '';
-           var data = footnoteData(id);
-           var page = ref.closest('.pagedjs_page');
-           var pageIndex = pages.indexOf(page);
-           if (!data || pageIndex < 0 || seen[id]) return;
-           seen[id] = true;
-           buckets[pageIndex].push(data);
-         });
-         buckets.forEach(function (notes, pageIndex) {
-           if (!notes.length) return;
-           notes.forEach(function (data) {
-             var target = document.createElement('span');
-             target.className = 'pdf-footnote-target';
-             target.id = 'pdf-fn-note-' + data.id;
-             pages[pageIndex].appendChild(target);
-           });
-           var wrap = document.createElement('div');
-           wrap.className = 'pdf-manual-footnotes';
-           notes.forEach(function (data) {
-             var item = document.createElement('div');
-             item.className = 'pdf-manual-footnote';
-             item.setAttribute('data-pdf-manual-footnote', data.id);
-             var marker = document.createElement('span');
-             marker.className = 'pdf-manual-footnote-marker';
-             marker.textContent = data.id + '.';
-             var body = document.createElement('span');
-             body.className = 'pdf-manual-footnote-body';
-             body.innerHTML = data.html;
-             item.appendChild(marker);
-             item.appendChild(body);
-             wrap.appendChild(item);
-           });
-           pages[pageIndex].appendChild(wrap);
-         });
-       }
-       function clearManualDecorations() {
-         Array.prototype.slice.call(dest.querySelectorAll('.pdf-manual-footnotes, .pdf-manual-page-number, .pdf-footnote-target')).forEach(function (n) {
-           if (n.parentNode) n.parentNode.removeChild(n);
-         });
-       }
-       function placeManualPageNumbers() {
-         if (!${settings.showPageNumbers ? "true" : "false"}) return;
-         var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
-         pages.forEach(function (page, index) {
-           var num = document.createElement('div');
-           num.className = 'pdf-manual-page-number';
-           num.textContent = (index + 1) + ' / ' + pages.length;
-           page.appendChild(num);
-         });
-       }
-       function pageSection(page) {
-         return page && page.querySelector('.markdown-preview-sizer, .markdown-preview-section');
-       }
-       function clearSection(section) {
-         if (!section) return;
-         while (section.firstChild) section.removeChild(section.firstChild);
-       }
-       function ensureNextPage(pages, index) {
-         if (index + 1 < pages.length) return pages[index + 1];
-         var clone = pages[index].cloneNode(true);
-         clone.id = 'page-' + (pages.length + 1);
-         clone.setAttribute('data-page-number', String(pages.length + 1));
-         Array.prototype.slice.call(clone.querySelectorAll('[id]')).forEach(function (n) {
-           if (n !== clone) n.removeAttribute('id');
-         });
-         Array.prototype.slice.call(clone.querySelectorAll('.pdf-manual-footnotes, .pdf-manual-page-number, .pdf-footnote-target')).forEach(function (n) {
-           if (n.parentNode) n.parentNode.removeChild(n);
-         });
-         clearSection(pageSection(clone));
-         pages[index].parentNode.appendChild(clone);
-         pages.push(clone);
-         return clone;
-       }
-       function pageSafeBottom(page) {
-         var pr = page.getBoundingClientRect();
-         // Chromium's printed page clips before Paged.js's on-screen content
-         // box in a few split-block cases. Use a conservative physical page
-         // boundary, then further shrink it for footnotes/page numbers.
-         var safe = pr.bottom - 120;
-         var area = page.querySelector('.pdf-manual-footnotes');
-         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 16);
-         var pageNumber = page.querySelector('.pdf-manual-page-number');
-         if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 24);
-         return safe;
-       }
-       function moveCollidingBlocks() {
-         var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
-         var moved = false;
-         for (var i = 0; i < pages.length; i++) {
-           var page = pages[i];
-           var safeBottom = pageSafeBottom(page);
-           var section = pageSection(page);
-           if (!section) continue;
-           var guard = 0;
-           while (guard++ < 12) {
-             var children = Array.prototype.slice.call(section.children).filter(function (child) {
-               if (child.classList && (child.classList.contains('pdf-footnote-data') || child.classList.contains('pdf-footnote-target'))) return false;
-               var r = child.getBoundingClientRect();
-               return r.height > 0 && r.bottom > safeBottom;
-             });
-             if (!children.length) break;
-             var nextPage = ensureNextPage(pages, i);
-             var nextSection = pageSection(nextPage);
-             if (!nextSection) break;
-             nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
-             moved = true;
-           }
-         }
-         return moved;
-       }
-       function layoutManualDecorations() {
-         for (var i = 0; i < 8; i++) {
-           clearManualDecorations();
-           placeManualFootnotes();
-           placeManualPageNumbers();
-           if (!moveCollidingBlocks()) break;
-         }
-         clearManualDecorations();
-         placeManualFootnotes();
-         placeManualPageNumbers();
-       }
        window.PagedPolyfill.preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
          .then(function (f) {
-           layoutManualDecorations();
            if (src) src.remove();
            window.__pagedDone = true;
-           window.__pagedPages = dest.querySelectorAll('.pagedjs_page').length;
+           window.__pagedPages = f && f.total ? f.total : dest.querySelectorAll('.pagedjs_page').length;
          })
          .catch(function (e) { window.__pagedError = String(e && e.message ? e.message : e); });
      })();`
@@ -357,17 +217,11 @@ export async function paginateInWebview(
       `(function () {
          var d = document.getElementById('pf-dest');
          var pages = Array.prototype.slice.call(d.querySelectorAll('.pagedjs_page'));
-         return Array.prototype.slice.call(d.querySelectorAll('[data-pdf-manual-footnote]')).map(function (fn, i) {
+         return Array.prototype.slice.call(d.querySelectorAll('[data-note="footnote"]')).map(function (fn, i) {
            var pg = fn.closest('.pagedjs_page');
-           var r = fn.getBoundingClientRect();
-           var area = fn.closest('.pdf-manual-footnotes');
-           var ar = area ? area.getBoundingClientRect() : null;
-           var content = pg ? pg.querySelector('.pagedjs_page_content') : null;
-           var cr = content ? content.getBoundingClientRect() : null;
-           var overlap = ar && cr && cr.bottom > ar.top - 6 ? Math.round(cr.bottom - ar.top + 6) : 0;
            return '#' + (i + 1) + ' page ' + (pages.indexOf(pg) + 1) +
-             ' manual=true' +
-             (overlap > 0 ? ' OVERLAPS body by ' + overlap + 'px' : '') +
+             ' policy=' + (fn.getAttribute('data-note-policy') || '') +
+             ' display=' + (fn.getAttribute('data-note-display') || '') +
              ' text="' + (fn.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 80) + '"';
          });
        })();`
@@ -407,19 +261,7 @@ export async function printWebviewToPdf(
   // requested @page margins internally. Chromium must print those boxes with
   // zero additional print margin; otherwise it clips/reflows the preview pages
   // and text that is present in the DOM can disappear from the final PDF.
-  await webview.insertCSS(buildPrintStageCss(settings));
-  const data = await webview.printToPDF({
-    pageSize: settings.pageSize,
-    printBackground: settings.printBackground,
-    preferCSSPageSize: true,
-    scale: 1,
-    margins: { marginType: "none" },
-  });
-  return data as Uint8Array;
-}
-
-function buildPrintStageCss(settings: PdfFootnotesSettings): string {
-  return `
+  await webview.insertCSS(`
     @page {
       size: ${settings.pageSize};
       margin: 0;
@@ -447,7 +289,15 @@ function buildPrintStageCss(settings: PdfFootnotesSettings): string {
         page-break-after: auto;
       }
     }
-  `;
+  `);
+  const data = await webview.printToPDF({
+    pageSize: settings.pageSize,
+    printBackground: settings.printBackground,
+    preferCSSPageSize: true,
+    scale: 1,
+    margins: { marginType: "none" },
+  });
+  return data as Uint8Array;
 }
 
 // Write a self-contained copy of exactly what the print engine paginates, so
@@ -458,8 +308,7 @@ function dumpDebugHtml(
   theme: ThemeContext,
   styleSheets: string[],
   printStyles: string[],
-  pageCss: string,
-  settings: PdfFootnotesSettings
+  pageCss: string
 ): void {
   try {
     const fs = req("fs");
@@ -479,146 +328,16 @@ function dumpDebugHtml(
 <style>${safeCss(styleSheets.join("\n"))}</style>
 <style>${safeCss(printStyles.join("\n"))}</style>
 <style>${safeCss(pageCss)}</style>
-<style>${safeCss(buildPrintStageCss(settings))}</style>
 </head>
 <body class="${theme.bodyClass} theme-light" style="${theme.bodyStyle}">
 <div class="print"><div id="pf-src">${bodyHtml}</div><div id="pf-dest"></div></div>
 <script>
   window.PagedConfig = { auto: false };
   window.__pdfPageCss = ${JSON.stringify(pageCss)};
-  function placeManualFootnotes(src, dest) {
-    var data = Array.prototype.slice.call(src.querySelectorAll('[data-pdf-footnote]')).map(function (n) {
-      return { id: n.getAttribute('data-pdf-footnote') || '', html: n.innerHTML || '' };
-    });
-    function findData(id) {
-      for (var i = 0; i < data.length; i++) if (data[i].id === id) return data[i];
-      return null;
-    }
-    var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
-    var buckets = pages.map(function () { return []; });
-    var seen = {};
-    Array.prototype.slice.call(dest.querySelectorAll('[data-pdf-footnote-ref]')).forEach(function (ref) {
-      var id = ref.getAttribute('data-pdf-footnote-ref') || '';
-      var item = findData(id);
-      var page = ref.closest('.pagedjs_page');
-      var pageIndex = pages.indexOf(page);
-      if (!item || pageIndex < 0 || seen[id]) return;
-      seen[id] = true;
-      buckets[pageIndex].push(item);
-    });
-    buckets.forEach(function (notes, pageIndex) {
-      if (!notes.length) return;
-      notes.forEach(function (note) {
-        var target = document.createElement('span');
-        target.className = 'pdf-footnote-target';
-        target.id = 'pdf-fn-note-' + note.id;
-        pages[pageIndex].appendChild(target);
-      });
-      var wrap = document.createElement('div');
-      wrap.className = 'pdf-manual-footnotes';
-      notes.forEach(function (note) {
-        var item = document.createElement('div');
-        item.className = 'pdf-manual-footnote';
-        item.setAttribute('data-pdf-manual-footnote', note.id);
-        var marker = document.createElement('span');
-        marker.className = 'pdf-manual-footnote-marker';
-        marker.textContent = note.id + '.';
-        var body = document.createElement('span');
-        body.className = 'pdf-manual-footnote-body';
-        body.innerHTML = note.html;
-        item.appendChild(marker);
-        item.appendChild(body);
-        wrap.appendChild(item);
-      });
-      pages[pageIndex].appendChild(wrap);
-    });
-  }
-  function clearManualDecorations(dest) {
-    Array.prototype.slice.call(dest.querySelectorAll('.pdf-manual-footnotes, .pdf-manual-page-number, .pdf-footnote-target')).forEach(function (n) {
-      if (n.parentNode) n.parentNode.removeChild(n);
-    });
-  }
-  function placeManualPageNumbers(dest) {
-    var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
-    pages.forEach(function (page, index) {
-      var num = document.createElement('div');
-      num.className = 'pdf-manual-page-number';
-      num.textContent = (index + 1) + ' / ' + pages.length;
-      page.appendChild(num);
-    });
-  }
-  function pageSection(page) {
-    return page && page.querySelector('.markdown-preview-sizer, .markdown-preview-section');
-  }
-  function clearSection(section) {
-    if (!section) return;
-    while (section.firstChild) section.removeChild(section.firstChild);
-  }
-  function ensureNextPage(pages, index) {
-    if (index + 1 < pages.length) return pages[index + 1];
-    var clone = pages[index].cloneNode(true);
-    clone.id = 'page-' + (pages.length + 1);
-    clone.setAttribute('data-page-number', String(pages.length + 1));
-    Array.prototype.slice.call(clone.querySelectorAll('[id]')).forEach(function (n) {
-      if (n !== clone) n.removeAttribute('id');
-    });
-    Array.prototype.slice.call(clone.querySelectorAll('.pdf-manual-footnotes, .pdf-manual-page-number, .pdf-footnote-target')).forEach(function (n) {
-      if (n.parentNode) n.parentNode.removeChild(n);
-    });
-    clearSection(pageSection(clone));
-    pages[index].parentNode.appendChild(clone);
-    pages.push(clone);
-    return clone;
-  }
-  function pageSafeBottom(page) {
-    var pr = page.getBoundingClientRect();
-    var safe = pr.bottom - 120;
-    var area = page.querySelector('.pdf-manual-footnotes');
-    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 16);
-    var pageNumber = page.querySelector('.pdf-manual-page-number');
-    if (pageNumber) safe = Math.min(safe, pageNumber.getBoundingClientRect().top - 24);
-    return safe;
-  }
-  function moveCollidingBlocks(dest) {
-    var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
-    var moved = false;
-    for (var i = 0; i < pages.length; i++) {
-      var page = pages[i];
-      var safeBottom = pageSafeBottom(page);
-      var section = pageSection(page);
-      if (!section) continue;
-      var guard = 0;
-      while (guard++ < 12) {
-        var children = Array.prototype.slice.call(section.children).filter(function (child) {
-          if (child.classList && (child.classList.contains('pdf-footnote-data') || child.classList.contains('pdf-footnote-target'))) return false;
-          var r = child.getBoundingClientRect();
-          return r.height > 0 && r.bottom > safeBottom;
-        });
-        if (!children.length) break;
-        var nextPage = ensureNextPage(pages, i);
-        var nextSection = pageSection(nextPage);
-        if (!nextSection) break;
-        nextSection.insertBefore(children[children.length - 1], nextSection.firstChild);
-        moved = true;
-      }
-    }
-    return moved;
-  }
-  function layoutManualDecorations(src, dest) {
-    for (var i = 0; i < 8; i++) {
-      clearManualDecorations(dest);
-      placeManualFootnotes(src, dest);
-      ${settings.showPageNumbers ? "placeManualPageNumbers(dest);" : ""}
-      if (!moveCollidingBlocks(dest)) break;
-    }
-    clearManualDecorations(dest);
-    placeManualFootnotes(src, dest);
-    ${settings.showPageNumbers ? "placeManualPageNumbers(dest);" : ""}
-  }
   window.addEventListener("load", function () {
     var src = document.getElementById("pf-src"), dest = document.getElementById("pf-dest");
     new window.Paged.Previewer().preview(src, [{ "pdf-footnotes.css": window.__pdfPageCss }], dest)
-      .then(function () { layoutManualDecorations(src, dest); if (src) src.remove(); });
+      .then(function () { if (src) src.remove(); });
   });
 </script>
 <script>${PAGEDJS_SOURCE}</script>
