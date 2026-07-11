@@ -29,7 +29,17 @@ const DOM_READY_TIMEOUT = 15000;
 const PAGED_TIMEOUT = 90000;
 
 const PATCH_CSS = `
-  body { overflow: auto !important; background: #fff !important; }
+  html {
+    height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  body {
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+    background: #fff !important;
+  }
   .markdown-preview-view, .markdown-preview-sizer, .print-root {
     width: 100% !important; max-width: none !important; height: auto !important;
   }
@@ -199,6 +209,23 @@ export async function paginateInWebview(
            if (n.parentNode) n.parentNode.removeChild(n);
          });
        }
+       function mergeSplitParagraphs() {
+         var firstByRef = {};
+         Array.prototype.slice.call(dest.querySelectorAll('p[data-ref]')).forEach(function (paragraph) {
+           var ref = paragraph.getAttribute('data-ref');
+           if (!ref) return;
+           var first = firstByRef[ref];
+           if (!first) {
+             firstByRef[ref] = paragraph;
+             paragraph.removeAttribute('data-split-from');
+             paragraph.removeAttribute('data-split-to');
+             paragraph.removeAttribute('data-split-original');
+             return;
+           }
+           while (paragraph.firstChild) first.appendChild(paragraph.firstChild);
+           paragraph.remove();
+         });
+       }
        function placeManualPageNumbers() {
          if (!${settings.showPageNumbers ? "true" : "false"}) return;
          var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
@@ -242,7 +269,7 @@ export async function paginateInWebview(
          var area = page.querySelector('.pdf-manual-footnotes');
          // The box has its natural, measured height, so pages without notes
          // reserve nothing and pages with notes reserve exactly what they need.
-         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 24);
+         if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 40);
          return safe;
        }
        function visualBottom(node) {
@@ -381,6 +408,7 @@ export async function paginateInWebview(
          return moved;
        }
        function layoutManualDecorations() {
+         mergeSplitParagraphs();
          for (var i = 0; i < 8; i++) {
            clearManualDecorations();
            placeManualFootnotes();
@@ -634,6 +662,23 @@ function dumpDebugHtml(
       if (n.parentNode) n.parentNode.removeChild(n);
     });
   }
+  function mergeSplitParagraphs(dest) {
+    var firstByRef = {};
+    Array.prototype.slice.call(dest.querySelectorAll('p[data-ref]')).forEach(function (paragraph) {
+      var ref = paragraph.getAttribute('data-ref');
+      if (!ref) return;
+      var first = firstByRef[ref];
+      if (!first) {
+        firstByRef[ref] = paragraph;
+        paragraph.removeAttribute('data-split-from');
+        paragraph.removeAttribute('data-split-to');
+        paragraph.removeAttribute('data-split-original');
+        return;
+      }
+      while (paragraph.firstChild) first.appendChild(paragraph.firstChild);
+      paragraph.remove();
+    });
+  }
   function placeManualPageNumbers(dest) {
     var pages = Array.prototype.slice.call(dest.querySelectorAll('.pagedjs_page'));
     pages.forEach(function (page, index) {
@@ -674,7 +719,7 @@ function dumpDebugHtml(
       pageRect.bottom - 150
     );
     var area = page.querySelector('.pdf-manual-footnotes');
-    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 24);
+    if (area) safe = Math.min(safe, area.getBoundingClientRect().top - 40);
     return safe;
   }
   function visualBottom(node) {
@@ -803,6 +848,7 @@ function dumpDebugHtml(
     return moved;
   }
   function layoutManualDecorations(src, dest) {
+    mergeSplitParagraphs(dest);
     for (var i = 0; i < 8; i++) {
       clearManualDecorations(dest);
       placeManualFootnotes(src, dest);
