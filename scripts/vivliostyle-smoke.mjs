@@ -65,6 +65,14 @@ function missingRun(sourceText,outputText){
   }
   return {max,excerpt:sourceWords.slice(maxStart,maxStart+16).join(" ")};
 }
+function preparePrint(){
+  document.documentElement.style.cssText+="height:auto!important;overflow:visible!important";
+  document.body.style.cssText+="height:auto!important;overflow:visible!important";
+  const viewport=document.getElementById("viewport");
+  viewport.style.cssText+="display:block!important;position:static!important;height:auto!important;overflow:visible!important";
+  document.querySelectorAll("[data-vivliostyle-outer-zoom-box],[data-vivliostyle-spread-container]").forEach(el=>el.style.cssText+="height:auto!important;width:100%!important");
+  document.querySelectorAll("[data-vivliostyle-page-container]").forEach(el=>el.style.cssText+="display:block!important;visibility:visible!important");
+}
 viewer.addListener("readystatechange",()=>{if(viewer.readyState===VivliostyleCore.ReadyState.COMPLETE){
   const integrity=missingRun(source.body.textContent||"",document.getElementById("viewport").textContent||"");
   document.documentElement.dataset.ready="true";
@@ -75,6 +83,7 @@ viewer.addListener("readystatechange",()=>{if(viewer.readyState===VivliostyleCor
   document.documentElement.dataset.images=String(document.querySelectorAll("#viewport img").length);
   document.documentElement.dataset.footnotes=String(document.querySelectorAll("#viewport [role=doc-footnote],#viewport .-vivliostyle-footnote-content").length);
   document.title="READY-"+viewer.getPageSizes().length+"-RUN-"+integrity.max;
+  if(location.search.includes("print=1"))preparePrint();
 }});
 viewer.addListener("error",event=>{document.title="ERROR-"+String(event?.content?.error||event?.content?.messages||"layout");});
 viewer.loadDocument({url:location.href},{documentObject:source,authorStyleSheet:[{text:payload.css}]});

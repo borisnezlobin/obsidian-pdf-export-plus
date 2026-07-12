@@ -271,7 +271,7 @@ export function snapshotComputedStyles(root: HTMLElement): void {
     "background", "background-color", "background-image", "background-position", "background-repeat", "background-size",
     "border", "border-color", "border-radius", "border-style", "border-width", "box-decoration-break", "box-shadow", "box-sizing",
     "color", "display", "fill", "font", "font-family", "font-feature-settings", "font-kerning", "font-size", "font-stretch",
-    "font-style", "font-variant", "font-variation-settings", "font-weight", "letter-spacing", "line-height", "list-style",
+    "font-style", "font-variant", "font-variation-settings", "font-weight", "letter-spacing", "line-height",
     "list-style-image", "list-style-position", "list-style-type", "margin", "margin-block", "margin-block-end", "margin-block-start",
     "margin-bottom", "margin-inline", "margin-inline-end", "margin-inline-start", "margin-left", "margin-right", "margin-top",
     "opacity", "outline", "outline-color", "outline-offset", "outline-style", "outline-width", "padding", "padding-block",

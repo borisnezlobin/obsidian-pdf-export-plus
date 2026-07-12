@@ -24,6 +24,8 @@ export class ExportModal extends Modal {
   private previewHost!: HTMLElement;
   private exportBtn!: ButtonComponent;
   private busy = false;
+  private rebuildRequested = false;
+  private previewRevision = 0;
 
   constructor(app: App, file: TFile, settings: PdfFootnotesSettings) {
     super(app);
@@ -157,23 +159,34 @@ export class ExportModal extends Modal {
 
   // Render (or re-render) the paginated preview after an option change.
   private async buildPreview() {
-    if (this.busy) return;
+    const revision = ++this.previewRevision;
+    if (this.busy) {
+      this.rebuildRequested = true;
+      return;
+    }
     this.busy = true;
+    const opts = { ...this.opts };
     this.exportBtn.setDisabled(true);
     this.teardownWebview();
     this.previewHost.empty();
 
     try {
-      if (!this.prepared) {
+      let prepared = this.prepared;
+      if (!prepared) {
         this.setStatus("Rendering note…");
-        this.prepared = await prepareNote(this.app, this.file, this.opts.includeTitle);
+        prepared = await prepareNote(this.app, this.file, opts.includeTitle);
+        if (revision === this.previewRevision) this.prepared = prepared;
       }
       const { webview, pageCount, outputText, removedHidden, imageReport, footnotePolicyReport } = await paginateInWebview(
         this.previewHost,
-        this.prepared.bodyHtml,
-        this.opts,
+        prepared.bodyHtml,
+        opts,
         (stage) => this.setStatus(stage)
       );
+      if (revision !== this.previewRevision) {
+        webview.remove();
+        return;
+      }
       this.webview = webview;
       // Keep the guest surface viewport-sized and scroll inside it. A webview
       // as tall as every page exceeds Electron's compositing limits and turns
@@ -184,8 +197,8 @@ export class ExportModal extends Modal {
       webview.style.height = "100%";
       webview.style.display = "flex";
 
-      const ready = `Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}, ${this.prepared.footnoteCount} footnote${
-        this.prepared.footnoteCount === 1 ? "" : "s"
+      const ready = `Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}, ${prepared.footnoteCount} footnote${
+        prepared.footnoteCount === 1 ? "" : "s"
       } at page bottoms. Scroll the preview to review, then Export.`;
 
       // Integrity check: only warn on a genuinely dropped contiguous chunk (a
@@ -193,7 +206,7 @@ export class ExportModal extends Modal {
       // Boundary mismatches from footnotes/headings produce only 1-2 and are
       // ignored, so the warning no longer cries wolf.
       const { maxRun, excerpt } = outputText
-        ? detectDroppedText(this.prepared.sourceText, outputText)
+        ? detectDroppedText(prepared.sourceText, outputText)
         : { maxRun: 0, excerpt: "" };
       if (this.opts.debugDump) {
         writeDebugReport(this.file.basename, {
@@ -222,6 +235,10 @@ export class ExportModal extends Modal {
       console.error("[PDF Footnotes] preview failed:", e);
     } finally {
       this.busy = false;
+      if (this.rebuildRequested) {
+        this.rebuildRequested = false;
+        void this.buildPreview();
+      }
     }
   }
 

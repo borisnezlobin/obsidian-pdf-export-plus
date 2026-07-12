@@ -54,7 +54,11 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     .print-root .callout-content > :first-child { margin-top: 0; }
     .print-root .callout-content > :last-child { margin-bottom: 0; }
 
-    .pdf-footnotes-title { margin: 0 0 1.2em; }
+    .pdf-footnotes-title {
+      margin: 0 0 0.8em !important;
+      padding: 0 !important;
+      break-after: avoid;
+    }
     .pdf-footnote-ref {
       color: inherit;
       font-size: 65%;

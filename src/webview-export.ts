@@ -135,6 +135,27 @@ export async function paginateInWebview(
 }
 
 export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSettings): Promise<Uint8Array> {
+  await webview.executeJavaScript(`
+    (function () {
+      document.documentElement.style.setProperty("height", "auto", "important");
+      document.documentElement.style.setProperty("overflow", "visible", "important");
+      document.body.style.setProperty("height", "auto", "important");
+      document.body.style.setProperty("overflow", "visible", "important");
+      var viewport = document.getElementById("viv-viewport");
+      viewport.style.setProperty("display", "block", "important");
+      viewport.style.setProperty("position", "static", "important");
+      viewport.style.setProperty("height", "auto", "important");
+      viewport.style.setProperty("overflow", "visible", "important");
+      document.querySelectorAll("[data-vivliostyle-outer-zoom-box], [data-vivliostyle-spread-container]").forEach(function (el) {
+        el.style.setProperty("height", "auto", "important");
+        el.style.setProperty("width", "100%", "important");
+      });
+      document.querySelectorAll("[data-vivliostyle-page-container]").forEach(function (page) {
+        page.style.setProperty("display", "block", "important");
+        page.style.setProperty("visibility", "visible", "important");
+      });
+    })();
+  `);
   const data = await webview.printToPDF({
     pageSize: settings.pageSize,
     printBackground: settings.printBackground,
