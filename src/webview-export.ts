@@ -15,7 +15,7 @@ export interface PaginationResult {
 }
 
 const DOM_READY_TIMEOUT = 15000;
-const LAYOUT_TIMEOUT = 120000;
+const LAYOUT_TIMEOUT = 30000;
 
 export async function paginateInWebview(
   host: HTMLElement,
@@ -35,9 +35,10 @@ export async function paginateInWebview(
     "position:absolute;inset:0;width:100%;height:100%;display:flex;border:0;background:#aaa;",
   );
   host.appendChild(webview);
-  webview.addEventListener("console-message", (event: any) =>
-    console.log("[PDF Footnotes webview]", event.message),
-  );
+  webview.addEventListener("console-message", (event: any) => {
+    if (event.message === "-- time slice --") return;
+    console.log("[PDF Footnotes webview]", event.message);
+  });
   await once(webview, "dom-ready", DOM_READY_TIMEOUT, "The preview page didn't load.");
   if (typeof webview.setZoomFactor === "function") webview.setZoomFactor(1);
 

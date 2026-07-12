@@ -229,7 +229,9 @@ export function collectPrintStyles(): string[] {
       const media = rule as CSSMediaRule;
       if (!media.conditionText.includes("print")) continue;
       const inner = Array.from(media.cssRules)
-        .map((r) => r.cssText)
+        .map((r) =>
+          r.cssText.replace(/--line-height(?:-customize|-normal)?\s*:[^;}]+;?/gi, ""),
+        )
         // CRITICAL: drop any rule that HIDES something. Obsidian's print CSS
         // includes `body > :not(.print){display:none}`, and un-wrapping it to
         // apply on screen hides Paged.js's own (transient, body-level) layout
