@@ -1,10 +1,9 @@
 import { PdfFootnotesSettings } from "./settings";
 
 export function buildPageCss(s: PdfFootnotesSettings): string {
-  const pageSize = physicalPageSize(s.pageSize);
   return `
     @page {
-      size: ${pageSize};
+      size: ${s.pageSize};
       margin: ${s.marginTop}mm ${s.marginRight}mm ${s.marginBottom}mm ${s.marginLeft}mm;
       ${s.showPageNumbers ? `@bottom-center { content: counter(page) " / " counter(pages); font-size: 10px; color: #555; }` : ""}
       @footnote {
@@ -115,16 +114,4 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     .pdf-fn-return-icon,
     .pdf-fn-return-icon path { color: inherit !important; fill: currentColor !important; }
   `;
-}
-
-function physicalPageSize(name: string): string {
-  const sizes: Record<string, string> = {
-    A3: "297mm 420mm",
-    A4: "210mm 297mm",
-    A5: "148mm 210mm",
-    Letter: "8.5in 11in",
-    Legal: "8.5in 14in",
-    Tabloid: "11in 17in",
-  };
-  return sizes[name] || sizes.A4;
 }

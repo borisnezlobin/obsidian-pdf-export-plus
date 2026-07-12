@@ -137,7 +137,7 @@ export async function paginateInWebview(
 }
 
 export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSettings): Promise<Uint8Array> {
-  const destinationReport = await webview.executeJavaScript(`
+  await webview.executeJavaScript(`
     (function () {
       document.documentElement.style.setProperty("height", "auto", "important");
       document.documentElement.style.setProperty("overflow", "visible", "important");
@@ -166,32 +166,19 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
       });
       destinationIds.forEach(function (id) {
         var targets = Array.from(document.querySelectorAll('[id="' + id + '"]'));
-        if (!targets.length) {
-          targets = Array.from(document.querySelectorAll("[data-vivliostyle-id], [id]")).filter(function (el) {
-            var encoded = el.getAttribute("data-vivliostyle-id") || el.getAttribute("id") || "";
-            return encoded.endsWith(":0023" + id) || encoded.endsWith("#" + id);
-          });
-        }
         var target = targets.find(function (el) { return el.closest("[data-vivliostyle-page-container]"); });
         if (!target) return;
         targets.forEach(function (el) { el.removeAttribute("id"); });
-        var anchor = document.createElement("a");
+        var anchor = document.createElement("span");
         anchor.id = id;
-        anchor.setAttribute("name", id);
         anchor.setAttribute("aria-hidden", "true");
-        anchor.style.cssText = "display:inline-block;width:1px;height:1px;overflow:hidden;vertical-align:top;color:transparent;text-decoration:none";
+        anchor.style.cssText = "display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top";
         target.parentNode.insertBefore(anchor, target);
       });
-      var resolved = Array.from(destinationIds).filter(function (id) {
-        return document.querySelector('[id="' + id + '"]');
-      });
-      return { requested: destinationIds.size, resolved: resolved.length, missing: Array.from(destinationIds).filter(function (id) { return resolved.indexOf(id) < 0; }) };
     })();
   `);
-  if (destinationReport.requested !== destinationReport.resolved) {
-    throw new Error(`Could not create PDF destinations: ${destinationReport.missing.join(", ")}`);
-  }
   const data = await webview.printToPDF({
+    pageSize: settings.pageSize,
     printBackground: settings.printBackground,
     preferCSSPageSize: true,
     scale: 1,
