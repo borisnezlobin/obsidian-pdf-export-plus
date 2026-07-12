@@ -39,6 +39,7 @@ export async function paginateInWebview(
     console.log("[PDF Footnotes webview]", event.message),
   );
   await once(webview, "dom-ready", DOM_READY_TIMEOUT, "The preview page didn't load.");
+  if (typeof webview.setZoomFactor === "function") webview.setZoomFactor(1);
 
   onProgress("Preparing document...");
   const payload = {
@@ -158,13 +159,28 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
         var match = link.getAttribute("href").match(/(?:#|:0023)(pdf-fn(?:ref)?-\\d+)$/);
         if (match) link.setAttribute("href", "#" + match[1]);
       });
+      var destinationIds = new Set();
+      document.querySelectorAll('a[href^="#pdf-fn"]').forEach(function (link) {
+        destinationIds.add(link.getAttribute("href").slice(1));
+      });
+      destinationIds.forEach(function (id) {
+        var targets = Array.from(document.querySelectorAll('[id="' + id + '"]'));
+        var target = targets.find(function (el) { return el.closest("[data-vivliostyle-page-container]"); });
+        if (!target) return;
+        targets.forEach(function (el) { el.removeAttribute("id"); });
+        var anchor = document.createElement("span");
+        anchor.id = id;
+        anchor.setAttribute("aria-hidden", "true");
+        anchor.style.cssText = "display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top";
+        target.parentNode.insertBefore(anchor, target);
+      });
     })();
   `);
   const data = await webview.printToPDF({
     pageSize: settings.pageSize,
     printBackground: settings.printBackground,
     preferCSSPageSize: true,
-    scale: 4 / 3,
+    scale: 1,
     margins: { marginType: "none" },
   });
   if (!data || data.length < 10_000) {

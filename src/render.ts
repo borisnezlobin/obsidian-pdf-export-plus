@@ -260,6 +260,10 @@ export interface ThemeContext {
 // the snapshot inline preserves theme/snippet typography and component styling
 // while giving the pagination document a small, deterministic CSS surface.
 export function snapshotComputedStyles(root: HTMLElement): void {
+  const printStyle = document.createElement("style");
+  printStyle.setAttribute("data-pdf-print-snapshot", "true");
+  printStyle.textContent = collectPrintStyles().join("\n");
+  document.head.appendChild(printStyle);
   const mount = document.createElement("div");
   mount.style.cssText =
     "position:fixed;left:-100000px;top:0;width:var(--file-line-width,700px);visibility:hidden;pointer-events:none;";
@@ -291,12 +295,13 @@ export function snapshotComputedStyles(root: HTMLElement): void {
 
   mount.removeChild(root);
   mount.remove();
+  printStyle.remove();
   const styleRules: string[] = [];
   const classByDeclarations = new Map<string, string>();
   elements.forEach((element, index) => {
     const declarations = snapshots[index]
       .map(([property, value, priority]) =>
-        `${property}:${scalePrintTypography(property, value)}${priority ? ` !${priority}` : ""}`,
+        `${property}:${value}${priority ? ` !${priority}` : ""}`,
       )
       .join(";");
     let className = classByDeclarations.get(declarations);
@@ -311,12 +316,6 @@ export function snapshotComputedStyles(root: HTMLElement): void {
   style.setAttribute("data-pdf-computed-styles", "true");
   style.textContent = styleRules.join("\n");
   root.prepend(style);
-}
-
-function scalePrintTypography(property: string, value: string): string {
-  if (property !== "font-size" && property !== "line-height") return value;
-  const match = value.match(/^(-?\d+(?:\.\d+)?)px$/);
-  return match ? `${Number(match[1]) * (4 / 3)}px` : value;
 }
 
 export function captureThemeContext(): ThemeContext {

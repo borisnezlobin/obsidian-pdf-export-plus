@@ -53,7 +53,7 @@ const html = `<!doctype html><meta charset="utf-8"><style>html,body,#viewport{wi
 const payload=JSON.parse(atob(${JSON.stringify(payload)}));
 const source=document.implementation.createHTMLDocument("smoke");
 source.body.innerHTML=payload.html;
-const viewer=new VivliostyleCore.CoreViewer({viewportElement:document.getElementById("viewport"),window,debug:false},{renderAllPages:true,pageViewMode:VivliostyleCore.PageViewMode.SINGLE_PAGE,fitToScreen:false,allowScripts:false});
+const viewer=new VivliostyleCore.CoreViewer({viewportElement:document.getElementById("viewport"),window,debug:false},{renderAllPages:true,pageViewMode:VivliostyleCore.PageViewMode.SINGLE_PAGE,fitToScreen:false,allowScripts:false,pixelRatio:Number(new URLSearchParams(location.search).get("pixelRatio")||8)});
 function words(text){return text.toLowerCase().normalize("NFKD").replace(/[^\\p{L}\\p{N}\\s]/gu," ").split(/\\s+/).filter(Boolean)}
 function missingRun(sourceText,outputText){
   const sourceWords=words(sourceText), outputWords=words(outputText), seen=new Set();
@@ -75,6 +75,17 @@ function preparePrint(){
   document.querySelectorAll('a[href*="pdf-fn"],a[href*="note-"],a[href*="ref-"]').forEach(link=>{
     const match=link.getAttribute("href").match(/(?:#|:0023)((?:pdf-fn(?:ref)?|note|ref)-\\d+)$/);
     if(match)link.setAttribute("href","#"+match[1]);
+  });
+  const ids=new Set(Array.from(document.querySelectorAll('a[href^="#"]')).map(link=>link.getAttribute("href").slice(1)));
+  ids.forEach(id=>{
+    const targets=Array.from(document.querySelectorAll('[id="'+id+'"]'));
+    const target=targets.find(el=>el.closest("[data-vivliostyle-page-container]"));
+    if(!target)return;
+    targets.forEach(el=>el.removeAttribute("id"));
+    const anchor=document.createElement("span");
+    anchor.id=id;
+    anchor.style.cssText="display:inline-block;width:0;height:0;overflow:hidden;vertical-align:top";
+    target.parentNode.insertBefore(anchor,target);
   });
 }
 viewer.addListener("readystatechange",()=>{if(viewer.readyState===VivliostyleCore.ReadyState.COMPLETE){

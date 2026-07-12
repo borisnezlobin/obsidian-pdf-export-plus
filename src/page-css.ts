@@ -14,13 +14,22 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     }
 
     html, body, .print-root {
-      margin: 0;
-      padding: 0;
-      width: auto;
-      max-width: none;
-      height: auto;
-      overflow: visible;
-      background: #fff;
+      margin: 0 !important;
+      padding: 0 !important;
+      width: auto !important;
+      max-width: none !important;
+      height: auto !important;
+      overflow: visible !important;
+      background: #fff !important;
+    }
+    .markdown-preview-sizer,
+    .markdown-preview-section {
+      width: auto !important;
+      max-width: none !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
     }
 
     .print-root .internal-embed,
@@ -39,6 +48,8 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       break-inside: avoid;
     }
     .print-root table { max-width: 100%; }
+    .print-root ul,
+    .print-root ol { padding-inline-start: 2em !important; }
     .print-root .callout,
     .print-root .callout-content,
     .print-root blockquote,
@@ -100,5 +111,7 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       white-space: nowrap;
     }
     .pdf-fn-return-icon { width: 0.85em; height: 0.85em; vertical-align: -0.12em; }
+    .pdf-fn-return-icon,
+    .pdf-fn-return-icon path { color: inherit !important; fill: currentColor !important; }
   `;
 }
