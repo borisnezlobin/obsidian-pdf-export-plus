@@ -1,4 +1,4 @@
-import { PDFDocument, PDFName, PDFNumber, PDFString } from "pdf-lib";
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFString } from "pdf-lib";
 import { req } from "./node";
 import { buildPageCss } from "./page-css";
 import { PdfFootnotesSettings } from "./settings";
@@ -286,14 +286,44 @@ async function addNamedDestinations(data: Uint8Array, destinations: PdfDestinati
   const context = doc.context;
   const destsDict = context.obj({});
   const nameTreePairs: (PDFString | ReturnType<typeof context.obj>)[] = [];
+  const explicitByName = new Map<PDFName, PDFArray>();
   const sorted = [...valid].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const dest of sorted) {
     const page = pages[dest.pageIndex];
     if (!page) continue;
     const top = Math.max(0, Math.min(page.getHeight(), page.getHeight() - dest.yTopPt + 8));
-    const destArray = context.obj([page.ref, PDFName.of("XYZ"), null, PDFNumber.of(top), null]);
+    const destArray = context.obj([page.ref, PDFName.of("XYZ"), null, PDFNumber.of(top), null]) as PDFArray;
     destsDict.set(PDFName.of(dest.id), destArray);
     nameTreePairs.push(PDFString.of(dest.id), destArray);
+    explicitByName.set(PDFName.of(dest.id), destArray);
+  }
+
+  // Some viewers (macOS Preview among them) draw named-destination links but
+  // never resolve the name, so also flatten each link annotation's /Dest (or
+  // GoTo action) to the explicit destination array. PDFName.of() memoizes, so
+  // name identity survives the Map lookup.
+  for (const page of pages) {
+    const annots = page.node.Annots();
+    if (!annots) continue;
+    for (let i = 0; i < annots.size(); i++) {
+      const annot = annots.lookup(i);
+      if (!(annot instanceof PDFDict)) continue;
+      const destName = annot.get(PDFName.of("Dest"));
+      if (destName instanceof PDFName) {
+        const explicit = explicitByName.get(destName);
+        if (explicit) annot.set(PDFName.of("Dest"), explicit);
+        continue;
+      }
+      const action = annot.get(PDFName.of("A"));
+      const actionDict = action instanceof PDFDict ? action : action ? context.lookup(action) : null;
+      if (actionDict instanceof PDFDict) {
+        const actionTarget = actionDict.get(PDFName.of("D"));
+        if (actionTarget instanceof PDFName) {
+          const explicit = explicitByName.get(actionTarget);
+          if (explicit) actionDict.set(PDFName.of("D"), explicit);
+        }
+      }
+    }
   }
   const namesLeaf = context.obj({});
   namesLeaf.set(PDFName.of("Names"), context.obj(nameTreePairs));
