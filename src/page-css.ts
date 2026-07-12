@@ -72,10 +72,11 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       float: footnote;
       footnote-display: block;
       footnote-policy: line;
-      font-size: ${s.footnoteFontPt}pt;
-      line-height: 1.4;
+      font-size: ${s.footnoteFontPt}pt !important;
+      line-height: 1.4 !important;
       overflow-wrap: anywhere;
     }
+    .pdf-footnote-label { font-weight: 600 !important; }
     .pdf-fn-return {
       color: #555;
       margin-left: 0.35em;

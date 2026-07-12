@@ -35,6 +35,10 @@ export function endnotesToFootnotes(root: HTMLElement): number {
     note.className = "pdf-footnote";
     note.id = noteId;
     note.setAttribute("role", "doc-footnote");
+    const label = doc.createElement("span");
+    label.className = "pdf-footnote-label";
+    label.textContent = `${count}. `;
+    note.appendChild(label);
     const body = (source.querySelector("p") as HTMLElement) || source;
     const clone = body.cloneNode(true) as HTMLElement;
     clone.querySelectorAll(".footnote-backref").forEach((el) => el.remove());

@@ -268,29 +268,55 @@ export function snapshotComputedStyles(root: HTMLElement): void {
 
   const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
   const kept = new Set([
-    "background", "background-color", "background-image", "background-position", "background-repeat", "background-size",
-    "border", "border-color", "border-radius", "border-style", "border-width", "box-decoration-break", "box-shadow", "box-sizing",
-    "color", "display", "fill", "font", "font-family", "font-feature-settings", "font-kerning", "font-size", "font-stretch",
-    "font-style", "font-variant", "font-variation-settings", "font-weight", "letter-spacing", "line-height",
-    "list-style-image", "list-style-position", "list-style-type", "margin", "margin-block", "margin-block-end", "margin-block-start",
-    "margin-bottom", "margin-inline", "margin-inline-end", "margin-inline-start", "margin-left", "margin-right", "margin-top",
-    "opacity", "outline", "outline-color", "outline-offset", "outline-style", "outline-width", "padding", "padding-block",
-    "padding-block-end", "padding-block-start", "padding-bottom", "padding-inline", "padding-inline-end", "padding-inline-start",
-    "padding-left", "padding-right", "padding-top", "stroke", "tab-size", "text-align", "text-decoration", "text-decoration-color",
-    "text-decoration-line", "text-decoration-style", "text-indent", "text-shadow", "text-transform", "text-underline-offset",
-    "vertical-align", "white-space", "word-break", "word-spacing", "overflow-wrap",
+    "background-color", "background-image", "border-bottom-color", "border-bottom-left-radius", "border-bottom-right-radius",
+    "border-bottom-style", "border-bottom-width", "border-left-color", "border-left-style", "border-left-width", "border-right-color",
+    "border-right-style", "border-right-width", "border-top-color", "border-top-left-radius", "border-top-right-radius",
+    "border-top-style", "border-top-width", "box-shadow", "box-sizing", "color", "display", "fill", "font-family", "font-size",
+    "font-style", "font-weight", "letter-spacing", "line-height", "list-style-image", "list-style-position", "list-style-type",
+    "margin-bottom", "margin-left", "margin-right", "margin-top", "opacity", "padding-bottom", "padding-left", "padding-right",
+    "padding-top", "stroke", "text-align", "text-decoration-color", "text-decoration-line", "text-decoration-style", "text-indent",
+    "text-transform", "text-underline-offset", "vertical-align", "white-space", "word-break", "word-spacing", "overflow-wrap",
   ]);
+  const snapshots: Array<Array<[string, string, string]>> = [];
   for (const element of elements) {
     const computed = getComputedStyle(element);
+    const declarations: Array<[string, string, string]> = [];
     for (const property of Array.from(computed)) {
       if (!kept.has(property)) continue;
       const value = computed.getPropertyValue(property);
-      if (value) element.style.setProperty(property, value, computed.getPropertyPriority(property));
+      if (value) declarations.push([property, value, computed.getPropertyPriority(property)]);
     }
+    snapshots.push(declarations);
   }
 
   mount.removeChild(root);
   mount.remove();
+  const styleRules: string[] = [];
+  const classByDeclarations = new Map<string, string>();
+  elements.forEach((element, index) => {
+    const declarations = snapshots[index]
+      .map(([property, value, priority]) =>
+        `${property}:${scalePrintTypography(property, value)}${priority ? ` !${priority}` : ""}`,
+      )
+      .join(";");
+    let className = classByDeclarations.get(declarations);
+    if (!className) {
+      className = `pdf-computed-${classByDeclarations.size}`;
+      classByDeclarations.set(declarations, className);
+      styleRules.push(`.${className}{${declarations}}`);
+    }
+    element.classList.add(className);
+  });
+  const style = root.ownerDocument.createElement("style");
+  style.setAttribute("data-pdf-computed-styles", "true");
+  style.textContent = styleRules.join("\n");
+  root.prepend(style);
+}
+
+function scalePrintTypography(property: string, value: string): string {
+  if (property !== "font-size" && property !== "line-height") return value;
+  const match = value.match(/^(-?\d+(?:\.\d+)?)px$/);
+  return match ? `${Number(match[1]) * (4 / 3)}px` : value;
 }
 
 export function captureThemeContext(): ThemeContext {

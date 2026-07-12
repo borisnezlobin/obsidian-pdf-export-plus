@@ -116,12 +116,13 @@ export async function prepareNote(
     sizer.insertBefore(h1, sizer.firstChild);
   }
 
+  const sourceText = normalizeText(container.textContent ?? "");
   snapshotComputedStyles(container);
 
   return {
     bodyHtml: container.outerHTML,
     footnoteCount,
-    sourceText: normalizeText(container.textContent ?? ""),
+    sourceText,
   };
 }
 

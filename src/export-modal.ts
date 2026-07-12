@@ -18,7 +18,7 @@ import { paginateInWebview, printWebviewToPdf } from "./webview-export";
 export class ExportModal extends Modal {
   private file: TFile;
   private opts: PdfFootnotesSettings;
-  private prepared: PreparedNote | null = null;
+  private preparedByTitle = new Map<boolean, PreparedNote>();
   private webview: any = null;
   private statusEl!: HTMLElement;
   private previewHost!: HTMLElement;
@@ -129,7 +129,6 @@ export class ExportModal extends Modal {
     compact(new Setting(row)).setName("Title heading").addToggle((t) =>
       t.setValue(this.opts.includeTitle).onChange((v) => {
         this.opts.includeTitle = v;
-        this.prepared = null; // title is baked into the rendered HTML — re-render
         void this.buildPreview();
       })
     );
@@ -171,11 +170,11 @@ export class ExportModal extends Modal {
     this.previewHost.empty();
 
     try {
-      let prepared = this.prepared;
+      let prepared = this.preparedByTitle.get(opts.includeTitle);
       if (!prepared) {
         this.setStatus("Rendering note…");
         prepared = await prepareNote(this.app, this.file, opts.includeTitle);
-        if (revision === this.previewRevision) this.prepared = prepared;
+        this.preparedByTitle.set(opts.includeTitle, prepared);
       }
       const { webview, pageCount, outputText, removedHidden, imageReport, footnotePolicyReport } = await paginateInWebview(
         this.previewHost,
