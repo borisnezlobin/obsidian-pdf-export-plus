@@ -117,7 +117,7 @@ export async function prepareNote(
   }
 
   const sourceText = normalizeText(container.textContent ?? "");
-  snapshotComputedStyles(container);
+  await snapshotComputedStyles(container);
 
   return {
     bodyHtml: container.outerHTML,

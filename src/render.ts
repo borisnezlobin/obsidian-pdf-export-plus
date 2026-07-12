@@ -256,12 +256,70 @@ export interface ThemeContext {
   bodyStyle: string;
 }
 
+// Pseudo-element styling that draws real content — MathJax CHTML paints every
+// math glyph via `mjx-c::before { content: "…" }` — lives only in stylesheet
+// rules, so element snapshots alone leave math as empty boxes. Capture the few
+// properties that reproduce painted pseudo content.
+const PSEUDO_PROPERTIES = [
+  "content", "font-family", "font-size", "font-style", "font-weight", "color",
+  "display", "letter-spacing", "vertical-align", "width", "min-width",
+  "padding-left", "padding-right", "margin-left", "margin-right",
+];
+
+function capturePseudoDeclarations(element: HTMLElement, pseudo: "::before" | "::after"): string {
+  const computed = getComputedStyle(element, pseudo);
+  const content = computed.getPropertyValue("content");
+  if (!content || content === "none" || content === "normal") return "";
+  return PSEUDO_PROPERTIES
+    .map((property) => [property, computed.getPropertyValue(property)] as const)
+    .filter(([, value]) => value)
+    .map(([property, value]) => `${property}:${value}`)
+    .join(";");
+}
+
+// MathJax's glyph pseudo-content renders with its own web fonts. Copy the MJX
+// @font-face rules out of the app and inline their font files as data: URIs so
+// the isolated export webview can load them.
+async function collectMathFontFaces(): Promise<string> {
+  const faces: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList | null = null;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    for (const rule of Array.from(rules ?? [])) {
+      if (rule.constructor.name !== "CSSFontFaceRule") continue;
+      const css = rule.cssText;
+      if (!/MJX|MathJax/i.test(css)) continue;
+      faces.push(await inlineFontUrls(css));
+    }
+  }
+  return faces.join("\n");
+}
+
+async function inlineFontUrls(fontFaceCss: string): Promise<string> {
+  const urls = [...fontFaceCss.matchAll(/url\((['"]?)([^'")]+)\1\)/g)];
+  let out = fontFaceCss;
+  for (const [whole, , url] of urls) {
+    if (url.startsWith("data:")) continue;
+    try {
+      const blob = await (await fetch(url)).blob();
+      out = out.replace(whole, `url(${await blobToDataUri(blob)})`);
+    } catch (e) {
+      console.warn("[PDF Footnotes] could not inline font", url.slice(0, 80), e);
+    }
+  }
+  return out;
+}
+
 // Freeze the note's browser-resolved appearance onto the exported elements.
 // Vivliostyle should paginate the note, not parse Obsidian's entire application
 // stylesheet (which contains UI-only selectors and newer CSS syntax). Keeping
 // the snapshot inline preserves theme/snippet typography and component styling
 // while giving the pagination document a small, deterministic CSS surface.
-export function snapshotComputedStyles(root: HTMLElement): void {
+export async function snapshotComputedStyles(root: HTMLElement): Promise<void> {
   const printStyle = document.createElement("style");
   printStyle.setAttribute("data-pdf-print-snapshot", "true");
   printStyle.textContent = collectPrintStyles().join("\n");
@@ -284,6 +342,7 @@ export function snapshotComputedStyles(root: HTMLElement): void {
     "text-transform", "text-underline-offset", "vertical-align", "white-space", "word-break", "word-spacing", "overflow-wrap",
   ]);
   const snapshots: Array<Array<[string, string, string]>> = [];
+  const pseudoSnapshots: Array<{ before: string; after: string }> = [];
   for (const element of elements) {
     const computed = getComputedStyle(element);
     const declarations: Array<[string, string, string]> = [];
@@ -293,6 +352,10 @@ export function snapshotComputedStyles(root: HTMLElement): void {
       if (value) declarations.push([property, value, computed.getPropertyPriority(property)]);
     }
     snapshots.push(declarations);
+    pseudoSnapshots.push({
+      before: capturePseudoDeclarations(element, "::before"),
+      after: capturePseudoDeclarations(element, "::after"),
+    });
   }
 
   mount.removeChild(root);
@@ -306,17 +369,21 @@ export function snapshotComputedStyles(root: HTMLElement): void {
         `${property}:${value}${priority ? ` !${priority}` : ""}`,
       )
       .join(";");
-    let className = classByDeclarations.get(declarations);
+    const pseudo = pseudoSnapshots[index];
+    const key = `${declarations}|${pseudo.before}|${pseudo.after}`;
+    let className = classByDeclarations.get(key);
     if (!className) {
       className = `pdf-computed-${classByDeclarations.size}`;
-      classByDeclarations.set(declarations, className);
+      classByDeclarations.set(key, className);
       styleRules.push(`.${className}{${declarations}}`);
+      if (pseudo.before) styleRules.push(`.${className}::before{${pseudo.before}}`);
+      if (pseudo.after) styleRules.push(`.${className}::after{${pseudo.after}}`);
     }
     element.classList.add(className);
   });
   const style = root.ownerDocument.createElement("style");
   style.setAttribute("data-pdf-computed-styles", "true");
-  style.textContent = styleRules.join("\n");
+  style.textContent = (await collectMathFontFaces()) + "\n" + styleRules.join("\n");
   root.prepend(style);
 }
 

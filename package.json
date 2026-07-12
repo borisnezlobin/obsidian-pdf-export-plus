@@ -9,7 +9,13 @@
     "build": "npm run embed && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "typecheck": "npm run embed && tsc -noEmit -skipLibCheck"
   },
-  "keywords": ["obsidian", "obsidian-plugin", "pdf", "footnotes", "vivliostyle"],
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "pdf",
+    "footnotes",
+    "vivliostyle"
+  ],
   "author": "Boris Nezlobin",
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
@@ -21,6 +27,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "@vivliostyle/core": "^2.44.1"
+    "@vivliostyle/core": "^2.44.1",
+    "pdf-lib": "^1.17.1"
   }
 }
