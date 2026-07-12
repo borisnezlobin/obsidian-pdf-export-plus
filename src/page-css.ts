@@ -60,14 +60,16 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       break-after: avoid;
     }
     .pdf-footnote-ref {
-      color: inherit;
-      font-size: 65%;
-      font-weight: 600;
-      line-height: 0;
-      text-decoration: none;
-      vertical-align: super;
+      color: inherit !important;
+      background: none !important;
+      padding: 0 !important;
+      font-size: 65% !important;
+      font-weight: 600 !important;
+      line-height: 0 !important;
+      text-decoration: none !important;
+      vertical-align: super !important;
     }
-    .pdf-footnote-ref sup { font: inherit; }
+    .pdf-footnote-ref sup { color: inherit !important; font: inherit !important; }
     .pdf-footnote {
       float: footnote;
       footnote-display: block;
@@ -77,10 +79,24 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
       overflow-wrap: anywhere;
     }
     .pdf-footnote-label { font-weight: 600 !important; }
+    .pdf-footnote * {
+      font-size: inherit !important;
+      line-height: inherit !important;
+    }
+    .pdf-footnote a {
+      background: none !important;
+      padding-right: 0 !important;
+    }
+    .external-link {
+      background-image: none !important;
+      padding-right: 0 !important;
+    }
     .pdf-fn-return {
-      color: #555;
+      color: #555 !important;
+      background: none !important;
       margin-left: 0.35em;
-      text-decoration: none;
+      padding: 0 !important;
+      text-decoration: none !important;
       white-space: nowrap;
     }
     .pdf-fn-return-icon { width: 0.85em; height: 0.85em; vertical-align: -0.12em; }

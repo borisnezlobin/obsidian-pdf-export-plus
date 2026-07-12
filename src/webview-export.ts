@@ -154,13 +154,17 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
         page.style.setProperty("display", "block", "important");
         page.style.setProperty("visibility", "visible", "important");
       });
+      document.querySelectorAll('a[href*="pdf-fn"]').forEach(function (link) {
+        var match = link.getAttribute("href").match(/(?:#|:0023)(pdf-fn(?:ref)?-\\d+)$/);
+        if (match) link.setAttribute("href", "#" + match[1]);
+      });
     })();
   `);
   const data = await webview.printToPDF({
     pageSize: settings.pageSize,
     printBackground: settings.printBackground,
     preferCSSPageSize: true,
-    scale: 1,
+    scale: 4 / 3,
     margins: { marginType: "none" },
   });
   if (!data || data.length < 10_000) {

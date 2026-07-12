@@ -72,6 +72,10 @@ function preparePrint(){
   viewport.style.cssText+="display:block!important;position:static!important;height:auto!important;overflow:visible!important";
   document.querySelectorAll("[data-vivliostyle-outer-zoom-box],[data-vivliostyle-spread-container]").forEach(el=>el.style.cssText+="height:auto!important;width:100%!important");
   document.querySelectorAll("[data-vivliostyle-page-container]").forEach(el=>el.style.cssText+="display:block!important;visibility:visible!important");
+  document.querySelectorAll('a[href*="pdf-fn"],a[href*="note-"],a[href*="ref-"]').forEach(link=>{
+    const match=link.getAttribute("href").match(/(?:#|:0023)((?:pdf-fn(?:ref)?|note|ref)-\\d+)$/);
+    if(match)link.setAttribute("href","#"+match[1]);
+  });
 }
 viewer.addListener("readystatechange",()=>{if(viewer.readyState===VivliostyleCore.ReadyState.COMPLETE){
   const integrity=missingRun(source.body.textContent||"",document.getElementById("viewport").textContent||"");
