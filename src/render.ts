@@ -254,6 +254,45 @@ export interface ThemeContext {
   bodyStyle: string;
 }
 
+// Freeze the note's browser-resolved appearance onto the exported elements.
+// Vivliostyle should paginate the note, not parse Obsidian's entire application
+// stylesheet (which contains UI-only selectors and newer CSS syntax). Keeping
+// the snapshot inline preserves theme/snippet typography and component styling
+// while giving the pagination document a small, deterministic CSS surface.
+export function snapshotComputedStyles(root: HTMLElement): void {
+  const mount = document.createElement("div");
+  mount.style.cssText =
+    "position:fixed;left:-100000px;top:0;width:var(--file-line-width,700px);visibility:hidden;pointer-events:none;";
+  document.body.appendChild(mount);
+  mount.appendChild(root);
+
+  const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+  const kept = new Set([
+    "background", "background-color", "background-image", "background-position", "background-repeat", "background-size",
+    "border", "border-color", "border-radius", "border-style", "border-width", "box-decoration-break", "box-shadow", "box-sizing",
+    "color", "display", "fill", "font", "font-family", "font-feature-settings", "font-kerning", "font-size", "font-stretch",
+    "font-style", "font-variant", "font-variation-settings", "font-weight", "letter-spacing", "line-height", "list-style",
+    "list-style-image", "list-style-position", "list-style-type", "margin", "margin-block", "margin-block-end", "margin-block-start",
+    "margin-bottom", "margin-inline", "margin-inline-end", "margin-inline-start", "margin-left", "margin-right", "margin-top",
+    "opacity", "outline", "outline-color", "outline-offset", "outline-style", "outline-width", "padding", "padding-block",
+    "padding-block-end", "padding-block-start", "padding-bottom", "padding-inline", "padding-inline-end", "padding-inline-start",
+    "padding-left", "padding-right", "padding-top", "stroke", "tab-size", "text-align", "text-decoration", "text-decoration-color",
+    "text-decoration-line", "text-decoration-style", "text-indent", "text-shadow", "text-transform", "text-underline-offset",
+    "vertical-align", "white-space", "word-break", "word-spacing", "overflow-wrap",
+  ]);
+  for (const element of elements) {
+    const computed = getComputedStyle(element);
+    for (const property of Array.from(computed)) {
+      if (!kept.has(property)) continue;
+      const value = computed.getPropertyValue(property);
+      if (value) element.style.setProperty(property, value, computed.getPropertyPriority(property));
+    }
+  }
+
+  mount.removeChild(root);
+  mount.remove();
+}
+
 export function captureThemeContext(): ThemeContext {
   return {
     headHtml: document.head.innerHTML,

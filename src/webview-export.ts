@@ -1,6 +1,5 @@
 import { req } from "./node";
 import { buildPageCss } from "./page-css";
-import { captureThemeContext, collectPrintStyles, collectStyleSheets } from "./render";
 import { PdfFootnotesSettings } from "./settings";
 import { VIVLIOSTYLE_SOURCE } from "./vivliostyle-bundle";
 
@@ -24,14 +23,13 @@ export async function paginateInWebview(
   settings: PdfFootnotesSettings,
   onProgress: ProgressFn,
 ): Promise<PaginationResult> {
-  const theme = captureThemeContext();
-  const authorStyles = [...collectStyleSheets(), ...collectPrintStyles(), buildPageCss(settings)];
+  const authorStyles = [buildPageCss(settings)];
 
   onProgress("Opening preview...");
   const webview = document.createElement("webview") as any;
-  webview.src = "app://obsidian.md/help.html";
-  webview.nodeintegration = true;
-  webview.setAttribute("nodeintegration", "on");
+  webview.src = "data:text/html;charset=utf-8," + encodeURIComponent(
+    "<!doctype html><html><head><meta charset=utf-8></head><body><div id=viv-viewport data-vivliostyle-viewer-viewport></div></body></html>",
+  );
   webview.setAttribute(
     "style",
     "position:absolute;inset:0;width:100%;height:100%;display:flex;border:0;background:#aaa;",
@@ -45,8 +43,6 @@ export async function paginateInWebview(
   onProgress("Preparing document...");
   const payload = {
     bodyHtml,
-    bodyClass: theme.bodyClass,
-    bodyStyle: theme.bodyStyle,
     styles: authorStyles,
     title: document.title,
   };
@@ -57,11 +53,6 @@ export async function paginateInWebview(
       window.__vivDone = false;
       window.__vivError = "";
       document.documentElement.style.height = "100%";
-      document.body.className = payload.bodyClass;
-      document.body.setAttribute("style", payload.bodyStyle || "");
-      document.body.classList.add("theme-light");
-      document.body.classList.remove("theme-dark");
-      document.body.innerHTML = '<div id="viv-viewport" data-vivliostyle-viewer-viewport></div>';
       var viewport = document.getElementById("viv-viewport");
       viewport.style.position = "absolute";
       viewport.style.inset = "0";
@@ -79,8 +70,6 @@ export async function paginateInWebview(
         var payload = window.__pdfPayload;
         var source = document.implementation.createHTMLDocument(payload.title || "PDF");
         source.documentElement.setAttribute("lang", document.documentElement.lang || "en");
-        source.body.className = payload.bodyClass;
-        source.body.setAttribute("style", payload.bodyStyle || "");
         source.body.innerHTML = payload.bodyHtml;
 
         var viewport = document.getElementById("viv-viewport");
@@ -90,7 +79,7 @@ export async function paginateInWebview(
             autoResize: false,
             renderAllPages: true,
             pageViewMode: window.VivliostyleCore.PageViewMode.SINGLE_PAGE,
-            fitToScreen: true,
+            fitToScreen: false,
             allowScripts: false,
             pixelRatio: 1
           }
@@ -135,7 +124,7 @@ export async function paginateInWebview(
   const footnotePolicyReport = await safeEval<string[]>(
     webview,
     `Array.prototype.slice.call(document.querySelectorAll("#viv-viewport .-vivliostyle-footnote-content, #viv-viewport [role=doc-footnote]")).map(function (note, i) {
-      return "#" + (i + 1) + " native=true text=\"" + (note.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 80) + "\"";
+      return "#" + (i + 1) + " native=true text=" + JSON.stringify((note.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 80));
     })`,
     [],
   );
@@ -153,6 +142,9 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
     scale: 1,
     margins: { marginType: "none" },
   });
+  if (!data || data.length < 10_000) {
+    throw new Error(`The renderer returned an invalid or blank PDF (${data?.length || 0} bytes).`);
+  }
   return data as Uint8Array;
 }
 

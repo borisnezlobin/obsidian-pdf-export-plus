@@ -1,6 +1,6 @@
 import { App, TFile } from "obsidian";
 import { req } from "./node";
-import { renderNoteToHtml } from "./render";
+import { renderNoteToHtml, snapshotComputedStyles } from "./render";
 import { PdfFootnotesSettings } from "./settings";
 import { endnotesToFootnotes } from "./transform";
 
@@ -115,6 +115,8 @@ export async function prepareNote(
     const h1 = createEl("h1", { cls: "pdf-footnotes-title", text: title });
     sizer.insertBefore(h1, sizer.firstChild);
   }
+
+  snapshotComputedStyles(container);
 
   return {
     bodyHtml: container.outerHTML,

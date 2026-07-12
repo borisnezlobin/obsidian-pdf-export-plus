@@ -211,10 +211,11 @@ export class ExportModal extends Modal {
           true
         );
         console.warn(`[PDF Footnotes] possible dropped passage (run=${maxRun}):`, excerpt);
+        this.exportBtn.setDisabled(true);
       } else {
         this.setStatus(ready);
+        this.exportBtn.setDisabled(false);
       }
-      this.exportBtn.setDisabled(false);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.setStatus(`Preview failed: ${msg} (see console: Cmd+Opt+I)`, true);

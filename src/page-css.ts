@@ -65,6 +65,7 @@ export function buildPageCss(s: PdfFootnotesSettings): string {
     }
     .pdf-footnote-ref sup { font: inherit; }
     .pdf-footnote {
+      float: footnote;
       footnote-display: block;
       footnote-policy: line;
       font-size: ${s.footnoteFontPt}pt;
