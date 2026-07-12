@@ -1,4 +1,5 @@
 import { Plugin } from "obsidian";
+import { maybeRunAutotest } from "./autotest";
 import { ExportModal } from "./export-modal";
 import { DEFAULT_SETTINGS, PdfFootnotesSettings, PdfFootnotesSettingTab } from "./settings";
 
@@ -7,6 +8,7 @@ export default class PdfFootnotesPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    this.app.workspace.onLayoutReady(() => void maybeRunAutotest(this, this.settings));
 
     this.addCommand({
       id: "export-pdf-footnotes",
