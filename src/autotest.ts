@@ -41,7 +41,7 @@ export async function maybeRunAutotest(plugin: Plugin, settings: PdfFootnotesSet
     if (!file) throw new Error(`autotest note not found: ${config.note}`);
 
     writeStatus("rendering");
-    const prepared = await prepareNote(app, file, settings.includeTitle);
+    const prepared = await prepareNote(app, file, settings.includeTitle, settings.applyLedeStyles);
 
     host = document.body.createDiv();
     host.setAttribute("style", "position:fixed;top:0;left:0;width:1000px;height:800px;z-index:9999;background:#fff;");

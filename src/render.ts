@@ -371,7 +371,7 @@ async function inlineFontUrls(fontFaceCss: string): Promise<string> {
 // stylesheet (which contains UI-only selectors and newer CSS syntax). Keeping
 // the snapshot inline preserves theme/snippet typography and component styling
 // while giving the pagination document a small, deterministic CSS surface.
-export async function snapshotComputedStyles(root: HTMLElement): Promise<void> {
+export async function snapshotComputedStyles(root: HTMLElement, applyLedeStyles: boolean): Promise<void> {
   const printStyle = document.createElement("style");
   printStyle.setAttribute("data-pdf-print-snapshot", "true");
   printStyle.textContent = collectPrintStyles().join("\n");
@@ -433,7 +433,9 @@ export async function snapshotComputedStyles(root: HTMLElement): Promise<void> {
     }
     element.classList.add(className);
   });
-  const fragmentPseudo = collectFragmentPseudoRules(root);
+  const fragmentPseudo = applyLedeStyles
+    ? collectFragmentPseudoRules(root)
+    : { css: "", families: new Set<string>() };
   const style = root.ownerDocument.createElement("style");
   style.setAttribute("data-pdf-computed-styles", "true");
   style.textContent = [

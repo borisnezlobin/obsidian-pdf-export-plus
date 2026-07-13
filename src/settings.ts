@@ -11,6 +11,7 @@ export interface PdfFootnotesSettings {
   printBackground: boolean;
   footnoteFontPt: number;
   includeTitle: boolean;
+  applyLedeStyles: boolean; // forward ::first-letter/::first-line CSS (drop caps, bold lede)
   exportFolder: string; // absolute path; "" -> ~/Downloads
   openAfterExport: boolean;
   debugDump: boolean;
@@ -28,6 +29,7 @@ export const DEFAULT_SETTINGS: PdfFootnotesSettings = {
   printBackground: false,
   footnoteFontPt: 8.5,
   includeTitle: false,
+  applyLedeStyles: true,
   exportFolder: "",
   openAfterExport: true,
   debugDump: false,
@@ -84,6 +86,16 @@ export class PdfFootnotesSettingTab extends PluginSettingTab {
       .addToggle((t) =>
         t.setValue(this.plugin.settings.includeTitle).onChange(async (v) => {
           this.plugin.settings.includeTitle = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Drop caps & first-line styles")
+      .setDesc("Apply ::first-letter and ::first-line rules from your CSS snippets (drop caps, bold opening lines) to exports.")
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.applyLedeStyles).onChange(async (v) => {
+          this.plugin.settings.applyLedeStyles = v;
           await save();
         })
       );

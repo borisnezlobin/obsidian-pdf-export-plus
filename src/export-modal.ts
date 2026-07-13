@@ -18,7 +18,7 @@ import { paginateInWebview, printWebviewToPdf } from "./webview-export";
 export class ExportModal extends Modal {
   private file: TFile;
   private opts: PdfFootnotesSettings;
-  private preparedByTitle = new Map<boolean, PreparedNote>();
+  private preparedByRenderOptions = new Map<string, PreparedNote>();
   private webview: any = null;
   private statusEl!: HTMLElement;
   private previewHost!: HTMLElement;
@@ -132,6 +132,12 @@ export class ExportModal extends Modal {
         void this.buildPreview();
       })
     );
+    compact(new Setting(row)).setName("Drop caps").addToggle((t) =>
+      t.setValue(this.opts.applyLedeStyles).onChange((v) => {
+        this.opts.applyLedeStyles = v;
+        void this.buildPreview();
+      })
+    );
     compact(new Setting(row))
       .setName("Backgrounds")
       .addToggle((t) => t.setValue(this.opts.printBackground).onChange((v) => (this.opts.printBackground = v)));
@@ -170,11 +176,12 @@ export class ExportModal extends Modal {
     this.previewHost.empty();
 
     try {
-      let prepared = this.preparedByTitle.get(opts.includeTitle);
+      const renderKey = `${opts.includeTitle}:${opts.applyLedeStyles}`;
+      let prepared = this.preparedByRenderOptions.get(renderKey);
       if (!prepared) {
         this.setStatus("Rendering note…");
-        prepared = await prepareNote(this.app, this.file, opts.includeTitle);
-        this.preparedByTitle.set(opts.includeTitle, prepared);
+        prepared = await prepareNote(this.app, this.file, opts.includeTitle, opts.applyLedeStyles);
+        this.preparedByRenderOptions.set(renderKey, prepared);
       }
       const { webview, pageCount, outputText, removedHidden, imageReport, footnotePolicyReport } = await paginateInWebview(
         this.previewHost,

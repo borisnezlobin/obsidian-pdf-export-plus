@@ -102,7 +102,8 @@ export function writeDebugReport(
 export async function prepareNote(
   app: App,
   file: TFile,
-  includeTitle: boolean
+  includeTitle: boolean,
+  applyLedeStyles: boolean
 ): Promise<PreparedNote> {
   const markdown = await app.vault.read(file);
   const container = await renderNoteToHtml(app, markdown, file.path);
@@ -117,7 +118,7 @@ export async function prepareNote(
   }
 
   const sourceText = normalizeText(container.textContent ?? "");
-  await snapshotComputedStyles(container);
+  await snapshotComputedStyles(container, applyLedeStyles);
 
   return {
     bodyHtml: container.outerHTML,
