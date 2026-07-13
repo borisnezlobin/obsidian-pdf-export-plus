@@ -277,10 +277,57 @@ function capturePseudoDeclarations(element: HTMLElement, pseudo: "::before" | ":
     .join(";");
 }
 
-// MathJax's glyph pseudo-content renders with its own web fonts. Copy the MJX
-// @font-face rules out of the app and inline their font files as data: URIs so
-// the isolated export webview can load them.
-async function collectMathFontFaces(): Promise<string> {
+// ::first-line and ::first-letter style whole layout fragments, which computed
+// element snapshots cannot represent. Forward the matching rules verbatim
+// (lede bolding, drop caps, and similar custom print CSS keep working in the
+// export), and report the font families they use so their @font-face rules can
+// be inlined too. Rules inside @media print blocks are unwrapped, matching how
+// collectPrintStyles treats print-only styling.
+function collectFragmentPseudoRules(root: HTMLElement): { css: string; families: Set<string> } {
+  const out: string[] = [];
+  const families = new Set<string>();
+  const visit = (rules: CSSRuleList | null) => {
+    for (const rule of Array.from(rules ?? [])) {
+      if (rule.constructor.name === "CSSMediaRule") {
+        const media = rule as CSSMediaRule;
+        if (media.conditionText.includes("print")) visit(media.cssRules);
+        continue;
+      }
+      if (rule.constructor.name !== "CSSStyleRule") continue;
+      const styleRule = rule as CSSStyleRule;
+      const selector = styleRule.selectorText || "";
+      if (!/::first-(?:line|letter)/.test(selector)) continue;
+      const applies = selector.split(",").some((part) => {
+        const base = part.replace(/::first-(?:line|letter)/g, "").trim();
+        try {
+          return base ? !!root.querySelector(base) || root.matches(base) : false;
+        } catch {
+          return false;
+        }
+      });
+      if (!applies) continue;
+      out.push(styleRule.cssText);
+      for (const family of styleRule.style.getPropertyValue("font-family").split(",")) {
+        const name = family.trim().replace(/^["']|["']$/g, "").toLowerCase();
+        if (name) families.add(name);
+      }
+    }
+  };
+  for (const sheet of Array.from(document.styleSheets)) {
+    try {
+      visit(sheet.cssRules);
+    } catch {
+      /* cross-origin sheet */
+    }
+  }
+  return { css: out.join("\n"), families };
+}
+
+// Web fonts the export webview must be able to load on its own: MathJax's
+// glyph fonts (math pseudo-content renders with them) plus any family that the
+// forwarded fragment pseudo rules reference (e.g. a drop-cap face). Font files
+// are inlined as data: URIs.
+async function collectExportFontFaces(extraFamilies: Set<string>): Promise<string> {
   const faces: string[] = [];
   for (const sheet of Array.from(document.styleSheets)) {
     let rules: CSSRuleList | null = null;
@@ -292,7 +339,12 @@ async function collectMathFontFaces(): Promise<string> {
     for (const rule of Array.from(rules ?? [])) {
       if (rule.constructor.name !== "CSSFontFaceRule") continue;
       const css = rule.cssText;
-      if (!/MJX|MathJax/i.test(css)) continue;
+      const family = (rule as CSSFontFaceRule).style
+        .getPropertyValue("font-family")
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .toLowerCase();
+      if (!/MJX|MathJax/i.test(css) && !extraFamilies.has(family)) continue;
       faces.push(await inlineFontUrls(css));
     }
   }
@@ -381,9 +433,14 @@ export async function snapshotComputedStyles(root: HTMLElement): Promise<void> {
     }
     element.classList.add(className);
   });
+  const fragmentPseudo = collectFragmentPseudoRules(root);
   const style = root.ownerDocument.createElement("style");
   style.setAttribute("data-pdf-computed-styles", "true");
-  style.textContent = (await collectMathFontFaces()) + "\n" + styleRules.join("\n");
+  style.textContent = [
+    await collectExportFontFaces(fragmentPseudo.families),
+    styleRules.join("\n"),
+    fragmentPseudo.css,
+  ].join("\n");
   root.prepend(style);
 }
 

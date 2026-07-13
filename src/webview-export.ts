@@ -66,6 +66,32 @@ export async function paginateInWebview(
   onProgress("Loading Vivliostyle...");
   await webview.executeJavaScript(VIVLIOSTYLE_SOURCE);
 
+  // Vivliostyle nests its generated ::first-letter wrapper inside the
+  // ::first-line wrapper, but both its initial-letter relay rule
+  // ([style*="--viv-initialLetter"]:has(> [data-adapt-pseudo=first-letter]))
+  // and Chromium's initial-letter sizing need the cap as a direct child of the
+  // paragraph. Reorder the wrappers as they are generated so pagination
+  // measures the full-size drop cap; a same-microtask observer keeps the fix
+  // ahead of Vivliostyle's asynchronous layout measurements.
+  await webview.executeJavaScript(`
+    (function () {
+      function liftNestedCaps(root) {
+        root.querySelectorAll('[data-adapt-pseudo="first-line"] > [data-adapt-pseudo="first-letter"]').forEach(function (cap) {
+          var line = cap.parentElement;
+          line.parentElement.insertBefore(cap, line);
+        });
+      }
+      new MutationObserver(function (records) {
+        records.forEach(function (record) {
+          record.addedNodes.forEach(function (node) {
+            if (node.nodeType === 1) liftNestedCaps(node);
+          });
+        });
+      }).observe(document.getElementById("viv-viewport"), { childList: true, subtree: true });
+      window.__liftNestedCaps = liftNestedCaps;
+    })();
+  `);
+
   onProgress("Paginating with Vivliostyle...");
   await webview.executeJavaScript(`
     (function () {
@@ -198,6 +224,8 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
       if (spread) Array.from(spread.children).forEach(function (child) {
         if (!child.matches("[data-vivliostyle-page-container]")) child.remove();
       });
+
+      if (window.__liftNestedCaps) window.__liftNestedCaps(document);
 
       var pages = Array.from(document.querySelectorAll("[data-vivliostyle-page-container]"));
       pages.forEach(function (page, index) {
@@ -428,9 +456,22 @@ export async function collectPrintDiagnostics(webview: any): Promise<any> {
           scrollWidth: el.scrollWidth
         };
       });
+      var overflowingPages = containers.map(function (container, index) {
+        var area = container.querySelector("[data-vivliostyle-page-area]");
+        if (!area || !container.getBoundingClientRect().height) return null;
+        var areaRect = area.getBoundingClientRect();
+        var maxBottom = 0;
+        area.querySelectorAll("p, li, h1, h2, h3, h4, h5, h6, img, table").forEach(function (el) {
+          var b = el.getBoundingClientRect().bottom;
+          if (b > maxBottom) maxBottom = b;
+        });
+        var overflow = maxBottom - areaRect.bottom;
+        return overflow > 1 ? { page: index, overflowPx: Math.round(overflow * 100) / 100 } : null;
+      }).filter(Boolean);
       return {
         devicePixelRatio: window.devicePixelRatio,
         innerSize: [window.innerWidth, window.innerHeight],
+        overflowingPages: overflowingPages,
         docScroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
         bodyScroll: [document.body.scrollWidth, document.body.scrollHeight],
         wideElements: wideElements,
