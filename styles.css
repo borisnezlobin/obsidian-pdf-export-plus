@@ -1,0 +1,194 @@
+/* Block layout, not flex: flex items shrink when the column overflows, which
+   silently clipped section content instead of scrolling. */
+.pdfx-sidebar {
+  flex: 0 0 300px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  padding-bottom: 24px;
+}
+
+.pdfx-section + .pdfx-section,
+.pdfx-loose {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 6px;
+}
+
+/* A quiet sidebar group label, not a card: no background, border, or radius,
+   which is what Obsidian's own <button> styling was imposing here. */
+.pdfx-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 2px 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pdfx-section-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  transition: transform 120ms ease;
+}
+
+.pdfx-section-chevron .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.pdfx-section-header:hover .pdfx-section-chevron {
+  color: var(--text-muted);
+}
+
+.pdfx-section.is-collapsed .pdfx-section-chevron {
+  transform: rotate(-90deg);
+}
+
+.pdfx-section.is-collapsed .pdfx-section-body {
+  display: none;
+}
+
+.pdfx-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.94em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.pdfx-section-switch {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.pdfx-section-body {
+  padding: 0 2px 8px;
+}
+
+.pdfx-section-desc {
+  font-size: 0.78em;
+  line-height: 1.4;
+  color: var(--text-muted);
+  margin: 0 0 4px 20px;
+}
+
+/* Options owned by the section's switch: indented behind a rule so the
+   parent-child relationship reads even while the switch is on. */
+.pdfx-section-children {
+  margin-left: 20px;
+  padding-left: 12px;
+  border-left: 2px solid var(--background-modifier-border);
+  transition: opacity 120ms ease;
+}
+
+.pdfx-section-children.is-disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.pdfx-loose {
+  padding: 2px 2px 0;
+}
+
+.pdfx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  min-width: 0;
+}
+
+.pdfx-row + .pdfx-row {
+  border-top: 1px solid var(--background-modifier-border-hover);
+}
+
+.pdfx-row-stacked {
+  display: block;
+}
+
+.pdfx-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pdfx-row-stacked .pdfx-row-head {
+  margin-bottom: 7px;
+}
+
+.pdfx-row-name {
+  font-size: 0.86em;
+  color: var(--text-normal);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pdfx-row-value {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pdfx-row-control {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pdfx-row-stacked .pdfx-row-control > * {
+  width: 100%;
+}
+
+.pdfx-reset {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 4px;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.pdfx-reset:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.pdfx-reset .svg-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.pdfx-reset.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.pdfx-text,
+.pdfx-slider {
+  width: 100%;
+  min-width: 0;
+}
+
+.pdfx-text {
+  font-size: 0.86em;
+}
+
+input[type="range"].pdfx-slider {
+  margin: 0;
+}

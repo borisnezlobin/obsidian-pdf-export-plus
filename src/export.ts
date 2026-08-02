@@ -74,7 +74,7 @@ export function writeDebugReport(
     const os = req("os");
     const path = req("path");
     const lines = [
-      `PDF Footnotes debug report — ${fileName}`,
+      `PDF Export Plus debug report — ${fileName}`,
       `pages: ${info.pageCount}`,
       ``,
       `IMAGES in output (${info.imageReport.length}):`,
@@ -91,7 +91,6 @@ export function writeDebugReport(
     ];
     const outPath = path.join(os.homedir(), "Downloads", "pdf-footnotes-debug-report.txt");
     fs.writeFileSync(outPath, lines.join("\n"), "utf8");
-    console.log(`[PDF Footnotes] debug report written to ${outPath}`);
   } catch (e) {
     console.warn("[PDF Footnotes] debug report failed", e);
   }

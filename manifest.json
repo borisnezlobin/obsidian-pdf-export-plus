@@ -1,9 +1,9 @@
 {
   "id": "pdf-footnotes",
-  "name": "PDF Footnotes",
+  "name": "PDF Export Plus",
   "version": "0.1.0",
   "minAppVersion": "1.5.0",
-  "description": "Export notes to PDF with footnotes at the bottom of each page.",
+  "description": "Export polished PDFs with page-bottom footnotes, live preview, and professional typography.",
   "author": "Boris Nezlobin",
   "authorUrl": "https://borisnezlobin.com",
   "isDesktopOnly": true

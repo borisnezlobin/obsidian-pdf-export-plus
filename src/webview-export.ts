@@ -36,10 +36,12 @@ export async function paginateInWebview(
     "position:absolute;inset:0;width:100%;height:100%;display:flex;border:0;background:#aaa;",
   );
   host.appendChild(webview);
-  webview.addEventListener("console-message", (event: any) => {
-    if (event.message === "-- time slice --") return;
-    console.log("[PDF Footnotes webview]", event.message);
-  });
+  if (settings.debugDump) {
+    webview.addEventListener("console-message", (event: any) => {
+      if (event.message === "-- time slice --") return;
+      console.log("[PDF Footnotes webview]", event.message);
+    });
+  }
   await once(webview, "dom-ready", DOM_READY_TIMEOUT, "The preview page didn't load.");
   if (typeof webview.setZoomFactor === "function") webview.setZoomFactor(1);
 
@@ -137,6 +139,7 @@ export async function paginateInWebview(
   `);
 
   const pageCount = await waitForLayout(webview);
+  await stackPagesForPreview(webview);
   const outputText = await safeEval(
     webview,
     `(document.getElementById("viv-viewport").textContent || "").replace(/\\s+/g, " ").trim()`,
@@ -161,6 +164,69 @@ export async function paginateInWebview(
   if (settings.debugDump) writeDebugDump(bodyHtml, authorStyles, pageCount);
   onProgress(`Preview ready - ${pageCount} page${pageCount === 1 ? "" : "s"}.`);
   return { webview, pageCount, outputText, removedHidden: [], imageReport, footnotePolicyReport };
+}
+
+// Vivliostyle renders every page (renderAllPages) but arranges them as a
+// horizontal spread and shows one at a time, so the preview looked like a
+// one-page document. Break the spread into a vertical stack scaled to the
+// panel width — the same flattening print preparation does, minus the print
+// geometry.
+async function stackPagesForPreview(webview: any): Promise<void> {
+  await safeEval(
+    webview,
+    `(function () {
+      // The viewport is a flex row, which makes the zoom box a flex item: its
+      // height stretches to one viewport-height (so its overflow:hidden clips
+      // every page but the first) and it sits at flex-start (so nothing can be
+      // centered). Both symptoms end when the viewport is a plain block.
+      var viewport = document.getElementById("viv-viewport");
+      viewport.style.setProperty("display", "block", "important");
+      viewport.style.setProperty("overflow", "auto", "important");
+      viewport.style.setProperty("padding", "14px 0", "important");
+      viewport.style.setProperty("background", "#9a9a9a", "important");
+      // Vivliostyle's hidden 2x-viewport measurement workspace would otherwise
+      // become a visible block once the flex layout is gone. Pagination is
+      // finished, and print preparation removes it outright.
+      document.querySelectorAll("[data-vivliostyle-layout-box]").forEach(function (el) {
+        el.style.setProperty("display", "none", "important");
+      });
+      ["[data-vivliostyle-outer-zoom-box]", "[data-vivliostyle-spread-container]"].forEach(function (selector) {
+        var el = document.querySelector(selector);
+        if (!el) return;
+        el.style.setProperty("display", "block", "important");
+        el.style.setProperty("position", "static", "important");
+        el.style.setProperty("width", "auto", "important");
+        el.style.setProperty("height", "auto", "important");
+        el.style.setProperty("max-height", "none", "important");
+        el.style.setProperty("min-height", "0", "important");
+        el.style.setProperty("overflow", "visible", "important");
+        el.style.setProperty("margin", "0", "important");
+        el.style.setProperty("transform", "none", "important");
+        el.style.setProperty("zoom", "1", "important");
+      });
+      var pages = Array.prototype.slice.call(document.querySelectorAll("[data-vivliostyle-page-container]"));
+      pages.forEach(function (page) {
+        page.style.setProperty("display", "block", "important");
+        page.style.setProperty("visibility", "visible", "important");
+        page.style.setProperty("position", "relative", "important");
+        page.style.setProperty("margin", "0 auto 14px", "important");
+        page.style.setProperty("background", "#fff", "important");
+        page.style.setProperty("box-shadow", "0 1px 5px rgba(0,0,0,0.45)", "important");
+      });
+      // Scale on the pages themselves, not an ancestor: an ancestor's zoom
+      // would shrink the centering box along with the page and push the stack
+      // off to one side. Print preparation forces zoom:1 here, so none of this
+      // can reach the PDF. Measured before scaling, with ancestors at zoom 1.
+      var pageWidth = pages.length ? pages[0].getBoundingClientRect().width : 0;
+      var available = viewport.clientWidth - 28;
+      if (pageWidth > 0 && available > 0 && available < pageWidth) {
+        var scale = available / pageWidth;
+        pages.forEach(function (page) { page.style.setProperty("zoom", String(scale), "important"); });
+      }
+      return pages.length;
+    })()`,
+    0,
+  );
 }
 
 interface PdfDestination {
@@ -194,6 +260,9 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
       viewport.style.setProperty("position", "static", "important");
       viewport.style.setProperty("height", "auto", "important");
       viewport.style.setProperty("overflow", "clip", "important");
+      // Undo the preview stack's padding and scale (see stackPagesForPreview).
+      viewport.style.setProperty("padding", "0", "important");
+      viewport.style.setProperty("background", "#fff", "important");
       // display:block defeats the spread container's flex row, which would
       // otherwise lay the revealed pages out side by side.
       document.querySelectorAll("[data-vivliostyle-outer-zoom-box], [data-vivliostyle-spread-container]").forEach(function (el) {
@@ -235,6 +304,7 @@ export async function printWebviewToPdf(webview: any, settings: PdfFootnotesSett
         page.style.setProperty("zoom", "1", "important");
         page.style.setProperty("transform", "none", "important");
         page.style.setProperty("max-height", "none", "important");
+        page.style.setProperty("box-shadow", "none", "important");
         page.style.setProperty("break-after", index < pages.length - 1 ? "page" : "auto", "important");
       });
 
@@ -391,6 +461,14 @@ export async function collectPrintDiagnostics(webview: any): Promise<any> {
           transform: cs.transform,
           width: cs.width,
           height: cs.height,
+          position: cs.position,
+          overflow: cs.overflow,
+          maxHeight: cs.maxHeight,
+          minHeight: cs.minHeight,
+          float: cs.cssFloat,
+          contain: cs.contain,
+          display: cs.display,
+          inset: [cs.top, cs.right, cs.bottom, cs.left].join(" "),
           currentCSSZoom: typeof el.currentCSSZoom === "number" ? el.currentCSSZoom : null,
           inline: (el.getAttribute("style") || "").slice(0, 260),
           rect: rect(el)
@@ -468,7 +546,44 @@ export async function collectPrintDiagnostics(webview: any): Promise<any> {
         var overflow = maxBottom - areaRect.bottom;
         return overflow > 1 ? { page: index, overflowPx: Math.round(overflow * 100) / 100 } : null;
       }).filter(Boolean);
+      var viewportEl = document.getElementById("viv-viewport");
+      var previewPages = containers.map(function (container, index) {
+        var cs = getComputedStyle(container);
+        return {
+          index: index,
+          rect: rect(container),
+          display: cs.display,
+          visibility: cs.visibility,
+          position: cs.position,
+          opacity: cs.opacity,
+          zoom: cs.zoom,
+          transform: cs.transform,
+          marginLeft: cs.marginLeft,
+          marginRight: cs.marginRight,
+          inline: (container.getAttribute("style") || "").slice(0, 200),
+          childCount: container.childElementCount,
+          textLength: (container.textContent || "").length
+        };
+      });
       return {
+        previewViewport: viewportEl ? {
+          clientWidth: viewportEl.clientWidth,
+          clientHeight: viewportEl.clientHeight,
+          scrollWidth: viewportEl.scrollWidth,
+          scrollHeight: viewportEl.scrollHeight,
+          inline: (viewportEl.getAttribute("style") || "").slice(0, 240)
+        } : null,
+        previewSpread: (function () {
+          var spread = document.querySelector("[data-vivliostyle-spread-container]");
+          if (!spread) return null;
+          var cs = getComputedStyle(spread);
+          return {
+            display: cs.display, position: cs.position, width: cs.width, zoom: cs.zoom,
+            transform: cs.transform, childCount: spread.childElementCount,
+            inline: (spread.getAttribute("style") || "").slice(0, 240)
+          };
+        })(),
+        previewPages: previewPages,
         devicePixelRatio: window.devicePixelRatio,
         innerSize: [window.innerWidth, window.innerHeight],
         overflowingPages: overflowingPages,

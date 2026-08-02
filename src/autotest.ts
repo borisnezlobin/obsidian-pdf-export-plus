@@ -4,11 +4,15 @@ import { req } from "./node";
 import { PdfFootnotesSettings } from "./settings";
 import { collectPrintDiagnostics, paginateInWebview, printWebviewToPdf } from "./webview-export";
 
-// Development-only harness: when a marker file exists in the vault, the plugin
-// exports the configured note on startup and writes the PDF plus a geometry/
-// link instrumentation report to ~/Downloads/pdf-footnotes-autotest/. This lets
-// an external script drive full export cycles (build -> install -> relaunch
-// Obsidian -> read report) without clicking through the UI.
+// Development-only harness, deliberately NOT wired into the plugin: nothing
+// here ships in a release build. To drive full export cycles from a script
+// (build -> install -> relaunch Obsidian -> read report) without clicking
+// through the UI, call maybeRunAutotest from onload:
+//
+//   this.app.workspace.onLayoutReady(() => void maybeRunAutotest(this, this.settings));
+//
+// It then exports the note named by a marker file on startup and writes the PDF
+// plus a geometry/link instrumentation report to ~/Downloads/pdf-footnotes-autotest/.
 const MARKER_PATH = ".obsidian/pdf-footnotes-autotest.json";
 
 interface AutotestConfig {

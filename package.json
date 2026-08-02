@@ -1,7 +1,7 @@
 {
-  "name": "pdf-footnotes",
+  "name": "pdf-export-plus",
   "version": "0.1.0",
-  "description": "Export Obsidian notes to PDF with footnotes at the bottom of each page.",
+  "description": "Export polished Obsidian PDFs with page-bottom footnotes and professional typography.",
   "main": "main.js",
   "scripts": {
     "embed": "node scripts/embed-vivliostyle.mjs",

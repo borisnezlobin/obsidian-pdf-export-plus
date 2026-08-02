@@ -3,3 +3,7 @@ main.js
 *.js.map
 .DS_Store
 src/pagedjs-bundle.ts
+
+# Local development handoff notes, not part of the plugin
+HANDOFF-*.md
+handoff-assets/

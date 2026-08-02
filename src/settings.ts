@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type PdfFootnotesPlugin from "./main";
 
 export interface PdfFootnotesSettings {
+  settingsVersion: number;
   pageSize: string;
   marginTop: number; // mm
   marginBottom: number;
@@ -11,7 +12,14 @@ export interface PdfFootnotesSettings {
   printBackground: boolean;
   footnoteFontPt: number;
   includeTitle: boolean;
-  applyLedeStyles: boolean; // forward ::first-letter/::first-line CSS (drop caps, bold lede)
+  applyLedeStyles: boolean; // plugin-owned, font-agnostic drop cap
+  dropCapLines: number;
+  applyParagraphStyles: boolean; // indent/spacing shaping, usable on its own
+  professionalExport: boolean;
+  professionalFontFamily: string;
+  professionalFontSizePt: number;
+  professionalLineHeight: number;
+  professionalParagraphSpacingEm: number;
   exportFolder: string; // absolute path; "" -> ~/Downloads
   openAfterExport: boolean;
   debugDump: boolean;
@@ -20,6 +28,7 @@ export interface PdfFootnotesSettings {
 // Defaults lean on Better Export PDF's config (A4, page-number footer,
 // printBackground off) with readable margins. All are adjustable.
 export const DEFAULT_SETTINGS: PdfFootnotesSettings = {
+  settingsVersion: 2,
   pageSize: "A4",
   marginTop: 18,
   marginBottom: 16,
@@ -28,8 +37,15 @@ export const DEFAULT_SETTINGS: PdfFootnotesSettings = {
   showPageNumbers: true,
   printBackground: false,
   footnoteFontPt: 8.5,
-  includeTitle: false,
-  applyLedeStyles: true,
+  includeTitle: true,
+  applyLedeStyles: false,
+  dropCapLines: 3,
+  applyParagraphStyles: false,
+  professionalExport: false,
+  professionalFontFamily: "Times New Roman",
+  professionalFontSizePt: 12,
+  professionalLineHeight: 2,
+  professionalParagraphSpacingEm: 0,
   exportFolder: "",
   openAfterExport: true,
   debugDump: false,
@@ -92,10 +108,82 @@ export class PdfFootnotesSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Drop caps & first-line styles")
-      .setDesc("Apply ::first-letter and ::first-line rules from your CSS snippets (drop caps, bold opening lines) to exports.")
+      .setDesc("Add a font-agnostic drop cap to the opening paragraph. Theme and snippet first-letter rules are not imported.")
       .addToggle((t) =>
         t.setValue(this.plugin.settings.applyLedeStyles).onChange(async (v) => {
           this.plugin.settings.applyLedeStyles = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Drop cap size")
+      .setDesc("Number of text lines occupied by the opening letter.")
+      .addSlider((slider) =>
+        slider.setLimits(2, 6, 1).setDynamicTooltip().setValue(this.plugin.settings.dropCapLines).onChange(async (v) => {
+          this.plugin.settings.dropCapLines = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Paragraph shaping")
+      .setDesc(
+        "Indent first lines, control the space between paragraphs, and keep deliberate blank-line gaps from the note."
+      )
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.applyParagraphStyles).onChange(async (v) => {
+          this.plugin.settings.applyParagraphStyles = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Force professional export")
+      .setDesc("Use a clean, theme-independent print style for every export. You can still adjust the typography below.")
+      .addToggle((t) =>
+        t.setValue(this.plugin.settings.professionalExport).onChange(async (v) => {
+          this.plugin.settings.professionalExport = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Professional font")
+      .setDesc('A font installed on your computer, such as "Times New Roman", Georgia, or Arial.')
+      .addText((t) =>
+        t.setValue(this.plugin.settings.professionalFontFamily).onChange(async (v) => {
+          this.plugin.settings.professionalFontFamily = v.trim() || DEFAULT_SETTINGS.professionalFontFamily;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Professional font size")
+      .setDesc("Body text size in points.")
+      .addSlider((slider) =>
+        slider.setLimits(9, 16, 0.5).setDynamicTooltip().setValue(this.plugin.settings.professionalFontSizePt).onChange(async (v) => {
+          this.plugin.settings.professionalFontSizePt = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Professional line spacing")
+      .setDesc("2.0 is conventional double spacing; 1.5 is more compact.")
+      .addSlider((slider) =>
+        slider.setLimits(1, 2.5, 0.1).setDynamicTooltip().setValue(this.plugin.settings.professionalLineHeight).onChange(async (v) => {
+          this.plugin.settings.professionalLineHeight = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Paragraph spacing")
+      .setDesc("Extra space after paragraphs, in lines. Use 0 for manuscript-style indented paragraphs.")
+      .addSlider((slider) =>
+        slider.setLimits(0, 2, 0.1).setDynamicTooltip().setValue(this.plugin.settings.professionalParagraphSpacingEm).onChange(async (v) => {
+          this.plugin.settings.professionalParagraphSpacingEm = v;
           await save();
         })
       );

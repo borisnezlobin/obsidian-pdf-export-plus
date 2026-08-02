@@ -1,4 +1,14 @@
-import { App, ButtonComponent, Modal, Notice, Setting, TFile } from "obsidian";
+import {
+  App,
+  ButtonComponent,
+  DropdownComponent,
+  Modal,
+  Notice,
+  Setting,
+  TFile,
+  ToggleComponent,
+  setIcon,
+} from "obsidian";
 import {
   chooseSavePath,
   defaultOutputPath,
@@ -9,13 +19,15 @@ import {
   writeDebugReport,
   writePdf,
 } from "./export";
-import { PdfFootnotesSettings } from "./settings";
+import { installedFonts } from "./fonts";
+import { DEFAULT_SETTINGS, PdfFootnotesSettings } from "./settings";
 import { paginateInWebview, printWebviewToPdf } from "./webview-export";
 
 // A BEPDF-style export dialog: it renders a live paginated PREVIEW (the actual
 // Paged.js output, footnotes at page bottoms), lets you adjust options, and
 // exports that exact preview to PDF via a native save dialog.
 export class ExportModal extends Modal {
+  private static datalistCount = 0;
   private file: TFile;
   private opts: PdfFootnotesSettings;
   private preparedByRenderOptions = new Map<string, PreparedNote>();
@@ -26,11 +38,43 @@ export class ExportModal extends Modal {
   private busy = false;
   private rebuildRequested = false;
   private previewRevision = 0;
+  private persist: (settings: PdfFootnotesSettings) => Promise<void>;
+  private persistTimer: number | null = null;
+  private dirty = false;
 
-  constructor(app: App, file: TFile, settings: PdfFootnotesSettings) {
+  constructor(
+    app: App,
+    file: TFile,
+    settings: PdfFootnotesSettings,
+    persist: (settings: PdfFootnotesSettings) => Promise<void>
+  ) {
     super(app);
     this.file = file;
     this.opts = { ...settings };
+    this.persist = persist;
+  }
+
+  // Option changes are saved as they happen, so closing the modal without
+  // exporting still keeps the settings. Coalesced so dragging a slider does
+  // not write the settings file on every step.
+  private schedulePersist() {
+    this.dirty = true;
+    if (this.persistTimer !== null) window.clearTimeout(this.persistTimer);
+    this.persistTimer = window.setTimeout(() => {
+      this.persistTimer = null;
+      this.dirty = false;
+      void this.persist({ ...this.opts });
+    }, 400);
+  }
+
+  private flushPersist() {
+    if (this.persistTimer !== null) {
+      window.clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
+    if (!this.dirty) return;
+    this.dirty = false;
+    void this.persist({ ...this.opts });
   }
 
   onOpen() {
@@ -58,98 +102,398 @@ export class ExportModal extends Modal {
     workspace.style.gap = "14px";
     workspace.style.marginTop = "14px";
 
-    const sidebar = workspace.createDiv();
-    sidebar.style.flex = "0 0 220px";
-    sidebar.style.minWidth = "0";
+    const sidebar = workspace.createDiv({ cls: "pdfx-sidebar" });
     this.buildControls(sidebar);
 
-    this.previewHost = workspace.createDiv();
+    // The preview and the button row share a column so the sidebar runs the
+    // full height of the dialog and the status text starts at the preview's
+    // left edge rather than under the sidebar.
+    const previewColumn = workspace.createDiv();
+    previewColumn.style.flex = "1 1 auto";
+    previewColumn.style.width = "0";
+    previewColumn.style.minWidth = "0";
+    previewColumn.style.minHeight = "0";
+    previewColumn.style.display = "flex";
+    previewColumn.style.flexDirection = "column";
+
+    this.previewHost = previewColumn.createDiv();
     this.previewHost.style.position = "relative";
     this.previewHost.style.flex = "1 1 auto";
-    this.previewHost.style.width = "0";
-    this.previewHost.style.minHeight = "240px";
+    this.previewHost.style.minHeight = "0";
     this.previewHost.style.overflow = "hidden";
     this.previewHost.style.borderRadius = "6px";
     this.previewHost.style.background = "#fff";
     this.previewHost.style.boxShadow = "inset 0 0 0 1px var(--background-modifier-border)";
 
-    this.statusEl = contentEl.createDiv();
-    this.statusEl.style.flex = "0 0 auto";
-    this.statusEl.style.minHeight = "1.4em";
-    this.statusEl.style.color = "var(--text-muted)";
-    this.statusEl.style.fontSize = "0.9em";
-
-    this.buildButtons(contentEl);
+    this.buildButtons(previewColumn);
     void this.buildPreview();
   }
 
   onClose() {
+    this.flushPersist();
     this.teardownWebview();
     this.contentEl.empty();
   }
 
   private buildControls(parent: HTMLElement) {
-    const row = parent.createDiv();
-    row.style.display = "flex";
-    row.style.flexDirection = "column";
-    row.style.gap = "1px";
-    row.style.border = "1px solid var(--background-modifier-border)";
-    row.style.borderRadius = "6px";
-    row.style.overflow = "hidden";
-    row.style.background = "var(--background-modifier-border)";
+    const page = this.addSection(parent, { title: "Page setup" });
+    this.addDropdownRow(page.body, {
+      name: "Page size",
+      options: { A4: "A4", Letter: "Letter", Legal: "Legal", A3: "A3", A5: "A5", Tabloid: "Tabloid" },
+      value: this.opts.pageSize,
+      defaultValue: DEFAULT_SETTINGS.pageSize,
+      onChange: (v) => {
+        this.opts.pageSize = v;
+        void this.buildPreview();
+      },
+    });
+    this.addToggleRow(page.body, "Page numbers", this.opts.showPageNumbers, (v) => {
+      this.opts.showPageNumbers = v;
+      void this.buildPreview();
+    });
+    this.addToggleRow(page.body, "Title heading", this.opts.includeTitle, (v) => {
+      this.opts.includeTitle = v;
+      void this.buildPreview();
+    });
+    this.addToggleRow(page.body, "Background colors", this.opts.printBackground, (v) => {
+      this.opts.printBackground = v;
+    });
 
-    const compact = (setting: Setting): Setting => {
-      setting.settingEl.style.minWidth = "0";
-      setting.settingEl.style.padding = "12px";
-      setting.settingEl.style.border = "0";
-      setting.settingEl.style.background = "var(--background-primary)";
-      setting.settingEl.style.alignItems = "center";
-      setting.infoEl.style.minWidth = "0";
-      setting.nameEl.style.fontSize = "0.85em";
-      setting.nameEl.style.whiteSpace = "nowrap";
-      setting.nameEl.style.overflow = "visible";
-      return setting;
-    };
-
-    compact(new Setting(row)).setName("Page size").addDropdown((d) =>
-      d
-        .addOptions({ A4: "A4", Letter: "Letter", Legal: "Legal", A3: "A3", A5: "A5", Tabloid: "Tabloid" })
-        .setValue(this.opts.pageSize)
-        .onChange((v) => {
-          this.opts.pageSize = v;
+    // Declared before the professional section so switching that on can flip
+    // this section's own switch — it always implies paragraph shaping.
+    const paragraphs = this.addSection(parent, {
+      title: "Paragraph shaping",
+      description: "First-line indents and the space between paragraphs.",
+      toggle: {
+        value: this.opts.applyParagraphStyles,
+        onChange: (v) => {
+          this.opts.applyParagraphStyles = v;
           void this.buildPreview();
-        })
-    );
-    compact(new Setting(row)).setName("Page numbers").addToggle((t) =>
-      t.setValue(this.opts.showPageNumbers).onChange((v) => {
-        this.opts.showPageNumbers = v;
+        },
+      },
+    });
+    this.addSliderRow(paragraphs.body, {
+      name: "Paragraph spacing",
+      min: 0,
+      max: 2,
+      step: 0.1,
+      value: this.opts.professionalParagraphSpacingEm,
+      defaultValue: DEFAULT_SETTINGS.professionalParagraphSpacingEm,
+      format: (v) => (v === 0 ? "none, indented" : `${v.toFixed(1)} em`),
+      onChange: (v) => {
+        this.opts.professionalParagraphSpacingEm = v;
         void this.buildPreview();
-      })
-    );
-    compact(new Setting(row)).setName("Title heading").addToggle((t) =>
-      t.setValue(this.opts.includeTitle).onChange((v) => {
-        this.opts.includeTitle = v;
+      },
+    });
+
+    const dropCaps = this.addSection(parent, {
+      title: "Drop caps",
+      description: "Enlarge the first letter of the opening paragraph.",
+      toggle: {
+        value: this.opts.applyLedeStyles,
+        onChange: (v) => {
+          this.opts.applyLedeStyles = v;
+          void this.buildPreview();
+        },
+      },
+    });
+    this.addSliderRow(dropCaps.body, {
+      name: "Height",
+      min: 2,
+      max: 6,
+      step: 1,
+      value: this.opts.dropCapLines,
+      defaultValue: DEFAULT_SETTINGS.dropCapLines,
+      format: (v) => `${v} lines`,
+      onChange: (v) => {
+        this.opts.dropCapLines = v;
         void this.buildPreview();
-      })
-    );
-    compact(new Setting(row)).setName("Drop caps").addToggle((t) =>
-      t.setValue(this.opts.applyLedeStyles).onChange((v) => {
-        this.opts.applyLedeStyles = v;
+      },
+    });
+
+    const typography = this.addSection(parent, {
+      title: "Professional style",
+      description: "Theme-independent typography for the whole document.",
+      toggle: {
+        value: this.opts.professionalExport,
+        onChange: (v) => {
+          this.opts.professionalExport = v;
+          // Professional typography assumes shaped paragraphs, so switching it
+          // on switches those on too — the section above stays editable.
+          if (v && !this.opts.applyParagraphStyles) {
+            this.opts.applyParagraphStyles = true;
+            paragraphs.setToggle(true);
+          }
+          void this.buildPreview();
+        },
+      },
+    });
+    this.addFontRow(typography.body, {
+      name: "Font",
+      placeholder: DEFAULT_SETTINGS.professionalFontFamily,
+      value: this.opts.professionalFontFamily,
+      defaultValue: DEFAULT_SETTINGS.professionalFontFamily,
+      onChange: (v) => {
+        this.opts.professionalFontFamily = v.trim() || DEFAULT_SETTINGS.professionalFontFamily;
         void this.buildPreview();
-      })
+      },
+    });
+    this.addSliderRow(typography.body, {
+      name: "Font size",
+      min: 9,
+      max: 16,
+      step: 0.5,
+      value: this.opts.professionalFontSizePt,
+      defaultValue: DEFAULT_SETTINGS.professionalFontSizePt,
+      format: (v) => `${v} pt`,
+      onChange: (v) => {
+        this.opts.professionalFontSizePt = v;
+        void this.buildPreview();
+      },
+    });
+    this.addSliderRow(typography.body, {
+      name: "Line spacing",
+      min: 1,
+      max: 2.5,
+      step: 0.1,
+      value: this.opts.professionalLineHeight,
+      defaultValue: DEFAULT_SETTINGS.professionalLineHeight,
+      format: (v) => `${v.toFixed(1)}×`,
+      onChange: (v) => {
+        this.opts.professionalLineHeight = v;
+        void this.buildPreview();
+      },
+    });
+
+    const loose = parent.createDiv({ cls: "pdfx-loose" });
+    this.addToggleRow(loose, "Open after export", this.opts.openAfterExport, (v) => {
+      this.opts.openAfterExport = v;
+    });
+  }
+
+  // A collapsible section of related options. With `toggle`, the section's own
+  // switch owns the rows beneath it: they indent under a rule and grey out when
+  // it is off.
+  private addSection(
+    parent: HTMLElement,
+    opts: {
+      title: string;
+      description?: string;
+      toggle?: { value: boolean; onChange: (value: boolean) => void };
+    }
+  ): { body: HTMLElement; setToggle: (value: boolean) => void } {
+    const section = parent.createDiv({ cls: "pdfx-section" });
+    // A div rather than a <button>: Obsidian's button styling wins on
+    // specificity and would give every header a card's background and border.
+    const header = section.createDiv({
+      cls: "pdfx-section-header",
+      attr: { role: "button", tabindex: "0", "aria-expanded": "true" },
+    });
+    const chevron = header.createSpan({ cls: "pdfx-section-chevron" });
+    setIcon(chevron, "chevron-down");
+    header.createSpan({ cls: "pdfx-section-title", text: opts.title });
+
+    const body = section.createDiv({ cls: "pdfx-section-body" });
+    if (opts.description) body.createDiv({ cls: "pdfx-section-desc", text: opts.description });
+    const rows = body.createDiv({ cls: "pdfx-section-rows" });
+
+    const collapse = () => {
+      const collapsed = !section.hasClass("is-collapsed");
+      section.toggleClass("is-collapsed", collapsed);
+      header.setAttr("aria-expanded", String(!collapsed));
+    };
+    header.addEventListener("click", collapse);
+    header.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        collapse();
+      }
+    });
+
+    let setToggle = (_: boolean) => {};
+    if (opts.toggle) {
+      rows.addClass("pdfx-section-children");
+      rows.toggleClass("is-disabled", !opts.toggle.value);
+      // The switch sits inside the clickable header, so its clicks must not
+      // also collapse the section.
+      const slot = header.createDiv({ cls: "pdfx-section-switch" });
+      slot.addEventListener("click", (event) => event.stopPropagation());
+      const emit = this.saving(opts.toggle.onChange);
+      const toggle = new ToggleComponent(slot).setValue(opts.toggle.value).onChange((v) => {
+        rows.toggleClass("is-disabled", !v);
+        emit(v);
+      });
+      setToggle = (value: boolean) => {
+        toggle.setValue(value);
+        rows.toggleClass("is-disabled", !value);
+      };
+    }
+    return { body: rows, setToggle };
+  }
+
+  private saving<T>(onChange: (value: T) => void): (value: T) => void {
+    return (value: T) => {
+      onChange(value);
+      this.schedulePersist();
+    };
+  }
+
+  private addRow(parent: HTMLElement, name: string, stacked: boolean) {
+    const row = parent.createDiv({ cls: stacked ? "pdfx-row pdfx-row-stacked" : "pdfx-row" });
+    const head = row.createDiv({ cls: "pdfx-row-head" });
+    head.createSpan({ cls: "pdfx-row-name", text: name });
+    const control = row.createDiv({ cls: "pdfx-row-control" });
+    return { head, control };
+  }
+
+  // Shows only while the value differs from the shipped default, so the panel
+  // stays quiet until something has actually been changed.
+  private addResetButton(head: HTMLElement, isDefault: () => boolean, reset: () => void) {
+    const button = head.createEl("button", {
+      cls: "pdfx-reset",
+      attr: { type: "button", "aria-label": "Reset to default" },
+    });
+    setIcon(button, "rotate-ccw");
+    button.addEventListener("click", reset);
+    const sync = () => button.toggleClass("is-hidden", isDefault());
+    sync();
+    return sync;
+  }
+
+  private addToggleRow(parent: HTMLElement, name: string, value: boolean, onChange: (v: boolean) => void) {
+    const { control } = this.addRow(parent, name, false);
+    new ToggleComponent(control).setValue(value).onChange(this.saving(onChange));
+  }
+
+  private addDropdownRow(
+    parent: HTMLElement,
+    o: {
+      name: string;
+      options: Record<string, string>;
+      value: string;
+      defaultValue: string;
+      onChange: (v: string) => void;
+    }
+  ) {
+    const { head, control } = this.addRow(parent, o.name, true);
+    const emit = this.saving(o.onChange);
+    const dropdown = new DropdownComponent(control).addOptions(o.options).setValue(o.value);
+    const sync = this.addResetButton(
+      head,
+      () => dropdown.getValue() === o.defaultValue,
+      () => {
+        dropdown.setValue(o.defaultValue);
+        sync();
+        emit(o.defaultValue);
+      }
     );
-    compact(new Setting(row))
-      .setName("Backgrounds")
-      .addToggle((t) => t.setValue(this.opts.printBackground).onChange((v) => (this.opts.printBackground = v)));
-    compact(new Setting(row))
-      .setName("Open after export")
-      .addToggle((t) => t.setValue(this.opts.openAfterExport).onChange((v) => (this.opts.openAfterExport = v)));
+    dropdown.onChange((v) => {
+      sync();
+      emit(v);
+    });
+  }
+
+  private addFontRow(
+    parent: HTMLElement,
+    o: {
+      name: string;
+      placeholder: string;
+      value: string;
+      defaultValue: string;
+      onChange: (v: string) => void;
+    }
+  ) {
+    const { head, control } = this.addRow(parent, o.name, true);
+    const emit = this.saving(o.onChange);
+    const listId = `pdfx-fonts-${++ExportModal.datalistCount}`;
+    const input = control.createEl("input", { type: "text", cls: "pdfx-text" });
+    input.placeholder = o.placeholder;
+    input.value = o.value;
+    input.setAttr("list", listId);
+    const datalist = control.createEl("datalist");
+    datalist.id = listId;
+    for (const family of installedFonts(o.value)) {
+      datalist.createEl("option", { value: family });
+    }
+
+    const preview = () => {
+      input.style.fontFamily = `"${input.value.trim() || o.defaultValue}", serif`;
+    };
+    preview();
+    const sync = this.addResetButton(
+      head,
+      () => (input.value.trim() || o.defaultValue) === o.defaultValue,
+      () => {
+        input.value = o.defaultValue;
+        preview();
+        sync();
+        emit(o.defaultValue);
+      }
+    );
+    input.addEventListener("input", () => {
+      preview();
+      sync();
+      emit(input.value);
+    });
+  }
+
+  private addSliderRow(
+    parent: HTMLElement,
+    o: {
+      name: string;
+      min: number;
+      max: number;
+      step: number;
+      value: number;
+      defaultValue: number;
+      format: (v: number) => string;
+      onChange: (v: number) => void;
+    }
+  ) {
+    const { head, control } = this.addRow(parent, o.name, true);
+    const emit = this.saving(o.onChange);
+    const readout = head.createSpan({ cls: "pdfx-row-value" });
+    const input = control.createEl("input", { type: "range", cls: "pdfx-slider" });
+    input.min = String(o.min);
+    input.max = String(o.max);
+    input.step = String(o.step);
+    input.value = String(o.value);
+    readout.setText(o.format(o.value));
+
+    const sync = this.addResetButton(
+      head,
+      () => Number(input.value) === o.defaultValue,
+      () => {
+        input.value = String(o.defaultValue);
+        readout.setText(o.format(o.defaultValue));
+        sync();
+        emit(o.defaultValue);
+      }
+    );
+    // Track the label live while dragging, but only rebuild the preview once
+    // the handle is released.
+    input.addEventListener("input", () => {
+      readout.setText(o.format(Number(input.value)));
+      sync();
+    });
+    input.addEventListener("change", () => emit(Number(input.value)));
   }
 
   private buildButtons(parent: HTMLElement) {
     const bar = new Setting(parent);
     bar.settingEl.style.flex = "0 0 auto";
-    bar.settingEl.style.padding = "10px 0 0";
+    bar.settingEl.style.padding = "14px 0 0";
+    bar.settingEl.style.borderTop = "0";
+    bar.settingEl.style.alignItems = "center";
+    // The status shares the button row, sitting in the Setting's info slot so
+    // it stays left-aligned opposite Cancel/Export.
+    bar.infoEl.style.display = "flex";
+    bar.infoEl.style.alignItems = "center";
+    bar.infoEl.style.minHeight = "0";
+    this.statusEl = bar.infoEl.createDiv();
+    this.statusEl.style.color = "var(--text-muted)";
+    this.statusEl.style.fontSize = "0.9em";
+    this.statusEl.style.lineHeight = "1.3";
     bar.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
     bar.addButton((b) => {
       this.exportBtn = b;
@@ -176,7 +520,7 @@ export class ExportModal extends Modal {
     this.previewHost.empty();
 
     try {
-      const renderKey = `${opts.includeTitle}:${opts.applyLedeStyles}`;
+      const renderKey = `${opts.includeTitle}`;
       let prepared = this.preparedByRenderOptions.get(renderKey);
       if (!prepared) {
         this.setStatus("Rendering note…");
@@ -203,9 +547,7 @@ export class ExportModal extends Modal {
       webview.style.height = "100%";
       webview.style.display = "flex";
 
-      const ready = `Preview ready — ${pageCount} page${pageCount === 1 ? "" : "s"}, ${prepared.footnoteCount} footnote${
-        prepared.footnoteCount === 1 ? "" : "s"
-      } at page bottoms. Scroll the preview to review, then Export.`;
+      const ready = `Preview ready: ${pageCount} page${pageCount === 1 ? "" : "s"}.`;
 
       // Integrity check: only warn on a genuinely dropped contiguous chunk (a
       // long run of consecutive source trigrams absent from the output).
@@ -249,7 +591,6 @@ export class ExportModal extends Modal {
   }
 
   private async doExport() {
-    console.log("[PDF Footnotes] Export clicked. webview?", !!this.webview, "busy?", this.busy);
     if (this.busy) return;
     if (!this.webview) {
       this.setStatus("Preview isn't ready yet — please wait a moment.", true);
@@ -266,9 +607,7 @@ export class ExportModal extends Modal {
         return;
       }
       this.setStatus("Printing to PDF…");
-      console.log("[PDF Footnotes] printing to", choice.path);
       const data = await printWebviewToPdf(this.webview, this.opts);
-      console.log("[PDF Footnotes] printToPDF returned", data?.length, "bytes");
       writePdf(choice.path, data, this.opts.openAfterExport);
       new Notice("PDF exported.");
       this.renderDone(choice.path, data.length);

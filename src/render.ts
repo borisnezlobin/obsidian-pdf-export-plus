@@ -17,7 +17,13 @@ export async function renderNoteToHtml(
   const component = new Component();
   component.load();
   try {
-    await MarkdownRenderer.render(app, separateTrailingListParagraphs(markdown), sizer, sourcePath, component);
+    await MarkdownRenderer.render(
+      app,
+      markParagraphBreaks(separateTrailingListParagraphs(markdown)),
+      sizer,
+      sourcePath,
+      component
+    );
   } finally {
     component.unload();
   }
@@ -39,6 +45,57 @@ function separateTrailingListParagraphs(markdown: string): string {
     }
   }
   return lines.join("\n");
+}
+
+// Markdown collapses every run of blank lines into one paragraph break, so a
+// deliberately wider gap in the note is lost on export. Mark runs of two or
+// more blank lines with a spacer the print CSS can turn back into blank space.
+// Fenced code, indented code, and frontmatter are passed through untouched.
+function markParagraphBreaks(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let index = 0;
+
+  if (lines[0]?.trim() === "---") {
+    const end = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+    if (end > 0) {
+      out.push(...lines.slice(0, end + 1));
+      index = end + 1;
+    }
+  }
+
+  let fence: string | null = null;
+  let blanks = 0;
+  let seenContent = out.length > 0;
+  const flushBlanks = (nextLine: string | null) => {
+    const isIndentedCode = nextLine !== null && /^(?: {4}|\t)/.test(nextLine);
+    if (blanks >= 2 && seenContent && nextLine !== null && !isIndentedCode) {
+      out.push("", '<div class="pdf-para-break"></div>', "");
+    } else {
+      for (let i = 0; i < blanks; i++) out.push("");
+    }
+    blanks = 0;
+  };
+
+  for (; index < lines.length; index++) {
+    const line = lines[index];
+    const fenceMatch = /^ {0,3}(```+|~~~+)/.exec(line);
+    if (fence) {
+      if (fenceMatch && fenceMatch[1].startsWith(fence)) fence = null;
+      out.push(line);
+      continue;
+    }
+    if (!line.trim()) {
+      blanks++;
+      continue;
+    }
+    flushBlanks(line);
+    if (fenceMatch) fence = fenceMatch[1];
+    out.push(line);
+    seenContent = true;
+  }
+  flushBlanks(null);
+  return out.join("\n");
 }
 
 // MarkdownRenderer puts image embeds INLINE inside a paragraph
@@ -147,9 +204,9 @@ async function inlineImages(app: App, container: HTMLElement, sourcePath: string
     })
   );
 
-  console.log(
-    `[PDF Footnotes] images: ${imgs.length} found, ${viaEmbed} via vault, ${viaFetch} via fetch, ${failed} FAILED`
-  );
+  if (failed) {
+    console.warn(`[PDF Footnotes] ${failed} of ${imgs.length} images could not be inlined.`);
+  }
 }
 
 function mimeForExtension(ext: string): string {
@@ -277,52 +334,6 @@ function capturePseudoDeclarations(element: HTMLElement, pseudo: "::before" | ":
     .join(";");
 }
 
-// ::first-line and ::first-letter style whole layout fragments, which computed
-// element snapshots cannot represent. Forward the matching rules verbatim
-// (lede bolding, drop caps, and similar custom print CSS keep working in the
-// export), and report the font families they use so their @font-face rules can
-// be inlined too. Rules inside @media print blocks are unwrapped, matching how
-// collectPrintStyles treats print-only styling.
-function collectFragmentPseudoRules(root: HTMLElement): { css: string; families: Set<string> } {
-  const out: string[] = [];
-  const families = new Set<string>();
-  const visit = (rules: CSSRuleList | null) => {
-    for (const rule of Array.from(rules ?? [])) {
-      if (rule.constructor.name === "CSSMediaRule") {
-        const media = rule as CSSMediaRule;
-        if (media.conditionText.includes("print")) visit(media.cssRules);
-        continue;
-      }
-      if (rule.constructor.name !== "CSSStyleRule") continue;
-      const styleRule = rule as CSSStyleRule;
-      const selector = styleRule.selectorText || "";
-      if (!/::first-(?:line|letter)/.test(selector)) continue;
-      const applies = selector.split(",").some((part) => {
-        const base = part.replace(/::first-(?:line|letter)/g, "").trim();
-        try {
-          return base ? !!root.querySelector(base) || root.matches(base) : false;
-        } catch {
-          return false;
-        }
-      });
-      if (!applies) continue;
-      out.push(styleRule.cssText);
-      for (const family of styleRule.style.getPropertyValue("font-family").split(",")) {
-        const name = family.trim().replace(/^["']|["']$/g, "").toLowerCase();
-        if (name) families.add(name);
-      }
-    }
-  };
-  for (const sheet of Array.from(document.styleSheets)) {
-    try {
-      visit(sheet.cssRules);
-    } catch {
-      /* cross-origin sheet */
-    }
-  }
-  return { css: out.join("\n"), families };
-}
-
 // Web fonts the export webview must be able to load on its own: MathJax's
 // glyph fonts (math pseudo-content renders with them) plus any family that the
 // forwarded fragment pseudo rules reference (e.g. a drop-cap face). Font files
@@ -371,7 +382,7 @@ async function inlineFontUrls(fontFaceCss: string): Promise<string> {
 // stylesheet (which contains UI-only selectors and newer CSS syntax). Keeping
 // the snapshot inline preserves theme/snippet typography and component styling
 // while giving the pagination document a small, deterministic CSS surface.
-export async function snapshotComputedStyles(root: HTMLElement, applyLedeStyles: boolean): Promise<void> {
+export async function snapshotComputedStyles(root: HTMLElement, _applyLedeStyles: boolean): Promise<void> {
   const printStyle = document.createElement("style");
   printStyle.setAttribute("data-pdf-print-snapshot", "true");
   printStyle.textContent = collectPrintStyles().join("\n");
@@ -433,15 +444,11 @@ export async function snapshotComputedStyles(root: HTMLElement, applyLedeStyles:
     }
     element.classList.add(className);
   });
-  const fragmentPseudo = applyLedeStyles
-    ? collectFragmentPseudoRules(root)
-    : { css: "", families: new Set<string>() };
   const style = root.ownerDocument.createElement("style");
   style.setAttribute("data-pdf-computed-styles", "true");
   style.textContent = [
-    await collectExportFontFaces(fragmentPseudo.families),
+    await collectExportFontFaces(new Set<string>()),
     styleRules.join("\n"),
-    fragmentPseudo.css,
   ].join("\n");
   root.prepend(style);
 }
