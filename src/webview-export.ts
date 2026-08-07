@@ -643,6 +643,15 @@ function waitForLayout(webview: any, onProgress: ProgressFn): Promise<number> {
     let lastReportedPageCount = 0;
     let finished = false;
     const poll = async () => {
+      // Closing the modal removes the webview mid-typeset. Without this the
+      // evals below start failing, safeEval's fallback keeps handing back a
+      // fresh lastProgress, and the idle timeout can never fire — leaving this
+      // loop polling a detached element until the total timeout expires.
+      if (!webview.isConnected) {
+        finished = true;
+        reject(new Error("The preview was closed before typesetting finished."));
+        return;
+      }
       const state = await safeEval<LayoutState>(
         webview,
         `({

@@ -41,6 +41,7 @@ export class ExportModal extends Modal {
   private persist: (settings: PdfFootnotesSettings) => Promise<void>;
   private persistTimer: number | null = null;
   private dirty = false;
+  private closed = false;
   private cleanupCallbacks: Array<() => void> = [];
 
   constructor(
@@ -131,6 +132,7 @@ export class ExportModal extends Modal {
   }
 
   onClose() {
+    this.closed = true;
     this.flushPersist();
     this.teardownWebview();
     this.cleanupCallbacks.splice(0).forEach((cleanup) => cleanup());
@@ -161,8 +163,6 @@ export class ExportModal extends Modal {
       this.opts.printBackground = v;
     });
 
-    // Declared before the professional section so switching that on can flip
-    // this section's own switch — it always implies paragraph shaping.
     const paragraphs = this.addSection(parent, {
       title: "Paragraph shaping",
       description: "First-line indents and the space between paragraphs.",
@@ -700,11 +700,15 @@ export class ExportModal extends Modal {
         this.exportBtn.setDisabled(false);
       }
     } catch (e) {
+      // A close mid-typeset cancels the run; the modal is gone, so there is
+      // nowhere to report and nothing went wrong.
+      if (this.closed) return;
       const msg = e instanceof Error ? e.message : String(e);
       this.setStatus(`Preview failed: ${msg} (see console: Cmd+Opt+I)`, true);
       console.error("[PDF Footnotes] preview failed:", e);
     } finally {
       this.busy = false;
+      if (this.closed) return;
       if (this.rebuildRequested) {
         this.rebuildRequested = false;
         void this.buildPreview();

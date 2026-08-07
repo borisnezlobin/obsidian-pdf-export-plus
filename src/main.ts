@@ -31,17 +31,7 @@ export default class PdfFootnotesPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const saved = (await this.loadData()) ?? {};
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
-    const savedVersion: number = saved.settingsVersion ?? 0;
-    if (savedVersion < DEFAULT_SETTINGS.settingsVersion) {
-      // v1: pre-release settings had the title heading disabled by default.
-      if (savedVersion < 1) this.settings.includeTitle = true;
-      // v2: drop caps became opt-in.
-      if (savedVersion < 2) this.settings.applyLedeStyles = false;
-      this.settings.settingsVersion = DEFAULT_SETTINGS.settingsVersion;
-      await this.saveData(this.settings);
-    }
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
 
   async saveSettings() {

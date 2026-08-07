@@ -2,7 +2,6 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type PdfFootnotesPlugin from "./main";
 
 export interface PdfFootnotesSettings {
-  settingsVersion: number;
   pageSize: string;
   marginTop: number; // mm
   marginBottom: number;
@@ -28,7 +27,6 @@ export interface PdfFootnotesSettings {
 // Defaults lean on Better Export PDF's config (A4, page-number footer,
 // printBackground off) with readable margins. All are adjustable.
 export const DEFAULT_SETTINGS: PdfFootnotesSettings = {
-  settingsVersion: 2,
   pageSize: "A4",
   marginTop: 18,
   marginBottom: 16,

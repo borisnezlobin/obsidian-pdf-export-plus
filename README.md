@@ -76,8 +76,6 @@ Add a hotkey in Settings (`Ctrl`+`,` or `Cmd`+`,`) to export faster. I personall
 3. Copy all three files into that directory.
 4. Reload Obsidian and enable **PDF Export Plus** under **Community plugins**.
 
-The directory name remains `pdf-footnotes` for compatibility with existing installs; the displayed plugin name is PDF Export Plus.
-
 ## Settings
 
 | Setting | Purpose |
