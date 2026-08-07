@@ -33,28 +33,40 @@ content.splice(
 
 const realSource = process.env.REAL_SOURCE;
 let documentHtml = content.join("\n");
-if (realSource) {
-  const captured = fs.readFileSync(realSource, "utf8");
-  const body = captured.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-  if (!body) throw new Error(`No body found in ${realSource}`);
-  documentHtml = body[1];
-}
-
-const pageCss = `
+let pageCss = `
   @page { size: A4; margin: 18mm 18mm 22mm; @bottom-center { content: counter(page) " / " counter(pages); } @footnote { border-top: .5pt solid #888; margin-top: 8pt; padding-top: 6pt; } }
-  body { margin: 0; font: 16px/${realSource ? "3" : "2.1"} Georgia, serif; color: #17202a; }
+  body { margin: 0; font: 16px/2.1 Georgia, serif; color: #17202a; }
   p { margin: 0 0 1.1em; }
   img { display: block; max-width: 100%; max-height: 120mm; object-fit: contain; break-inside: avoid; }
   [role=doc-footnote] { float: footnote; font-size: 10pt; line-height: 1.35; }
   [role=doc-noteref] { vertical-align: super; font-size: 70%; }
 `;
+if (realSource) {
+  const captured = fs.readFileSync(realSource, "utf8");
+  const body = captured.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  if (!body) throw new Error(`No body found in ${realSource}`);
+  const stylesBeforeBody = captured.slice(0, body.index).match(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+  if (!stylesBeforeBody?.length) throw new Error(`No page styles found in ${realSource}`);
+  documentHtml = body[1];
+  pageCss = stylesBeforeBody
+    .map((style) => style.replace(/^<style[^>]*>|<\/style>$/gi, ""))
+    .join("\n");
+}
+
 const payload = Buffer.from(JSON.stringify({ html: documentHtml, css: pageCss })).toString("base64");
 const html = `<!doctype html><meta charset="utf-8"><style>html,body,#viewport{width:100%;height:100%;margin:0}#viewport{overflow:visible}</style><div id="viewport" data-vivliostyle-viewer-viewport></div><script>${bundle.outputFiles[0].text}</script><script>
 const payload=JSON.parse(atob(${JSON.stringify(payload)}));
 const source=document.implementation.createHTMLDocument("smoke");
 source.body.innerHTML=payload.html;
+const sourceBlocks=Array.from(source.querySelectorAll(".print-root :is(h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,table)"));
+sourceBlocks.forEach((element,index)=>element.setAttribute("data-smoke-source-block",String(index)));
 const viewer=new VivliostyleCore.CoreViewer({viewportElement:document.getElementById("viewport"),window,debug:false},{renderAllPages:true,pageViewMode:VivliostyleCore.PageViewMode.SINGLE_PAGE,fitToScreen:false,allowScripts:false,pixelRatio:Number(new URLSearchParams(location.search).get("pixelRatio")||8)});
 function words(text){return text.toLowerCase().normalize("NFKD").replace(/[^\\p{L}\\p{N}\\s]/gu," ").split(/\\s+/).filter(Boolean)}
+function visibleText(root){
+  const clone=root.cloneNode(true);
+  clone.querySelectorAll("style,script,template,mjx-container,mjx-assistive-mml").forEach(el=>el.remove());
+  return clone.textContent||"";
+}
 function missingRun(sourceText,outputText){
   const sourceWords=words(sourceText), outputWords=words(outputText), seen=new Set();
   for(let i=0;i+2<outputWords.length;i++)seen.add(outputWords.slice(i,i+3).join(" "));
@@ -89,12 +101,35 @@ function preparePrint(){
   });
 }
 viewer.addListener("readystatechange",()=>{if(viewer.readyState===VivliostyleCore.ReadyState.COMPLETE){
-  const integrity=missingRun(source.body.textContent||"",document.getElementById("viewport").textContent||"");
+  const sourceText=visibleText(source.querySelector(".print-root")||source.body);
+  const pageContainers=Array.from(document.querySelectorAll("[data-vivliostyle-page-container]"));
+  const outputText=pageContainers.map(visibleText).join(" ");
+  const integrity=missingRun(sourceText,outputText);
+  const outputBlocks=new Set(Array.from(document.querySelectorAll("[data-vivliostyle-page-container] [data-smoke-source-block]")).map(element=>element.getAttribute("data-smoke-source-block")));
+  const missingBlocks=sourceBlocks.filter(element=>!outputBlocks.has(element.getAttribute("data-smoke-source-block")));
+  const changedBlocks=sourceBlocks.filter(element=>{
+    const index=element.getAttribute("data-smoke-source-block");
+    const expected=words(visibleText(element)).join(" ");
+    if(!expected)return false;
+    const painted=Array.from(document.querySelectorAll('[data-vivliostyle-page-container] [data-smoke-source-block="'+index+'"]'));
+    return !painted.some(copy=>words(visibleText(copy)).join(" ").includes(expected));
+  });
   document.documentElement.dataset.ready="true";
   document.documentElement.dataset.missingRun=String(integrity.max);
   document.documentElement.dataset.missingExcerpt=integrity.excerpt;
-  document.documentElement.dataset.sourceWords=String(words(source.body.textContent||"").length);
-  document.documentElement.dataset.outputWords=String(words(document.getElementById("viewport").textContent||"").length);
+  document.documentElement.dataset.sourceWords=String(words(sourceText).length);
+  document.documentElement.dataset.outputWords=String(words(outputText).length);
+  document.documentElement.dataset.missingBlocks=missingBlocks.slice(0,12).map(element=>{
+    const text=visibleText(element).replace(/\\s+/g," ").trim().slice(0,60);
+    return element.getAttribute("data-smoke-source-block")+":"+element.localName+":"+text;
+  }).join("|");
+  document.documentElement.dataset.changedBlocks=changedBlocks.slice(0,12).map(element=>{
+    const index=element.getAttribute("data-smoke-source-block");
+    const expected=visibleText(element).replace(/\\s+/g," ").trim().slice(0,45);
+    const painted=document.querySelector('[data-vivliostyle-page-container] [data-smoke-source-block="'+index+'"]');
+    const actual=painted?visibleText(painted).replace(/\\s+/g," ").trim().slice(0,45):"";
+    return index+":"+element.localName+":"+expected+"=>"+actual;
+  }).join("|");
   document.documentElement.dataset.images=String(document.querySelectorAll("#viewport img").length);
   document.documentElement.dataset.footnotes=String(document.querySelectorAll("#viewport [role=doc-footnote],#viewport .-vivliostyle-footnote-content").length);
   document.title="READY-"+viewer.getPageSizes().length+"-RUN-"+integrity.max;

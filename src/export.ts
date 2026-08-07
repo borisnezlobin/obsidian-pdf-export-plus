@@ -116,7 +116,9 @@ export async function prepareNote(
     sizer.insertBefore(h1, sizer.firstChild);
   }
 
-  const sourceText = normalizeText(container.textContent ?? "");
+  const proseSnapshot = container.cloneNode(true) as HTMLElement;
+  proseSnapshot.querySelectorAll("style, script, template, mjx-container, mjx-assistive-mml").forEach((element) => element.remove());
+  const sourceText = normalizeText(proseSnapshot.textContent ?? "");
   await snapshotComputedStyles(container, applyLedeStyles);
 
   return {

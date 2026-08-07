@@ -313,10 +313,9 @@ export interface ThemeContext {
   bodyStyle: string;
 }
 
-// Pseudo-element styling that draws real content — MathJax CHTML paints every
-// math glyph via `mjx-c::before { content: "…" }` — lives only in stylesheet
-// rules, so element snapshots alone leave math as empty boxes. Capture the few
-// properties that reproduce painted pseudo content.
+// Pseudo-element styling that draws real content lives only in stylesheet
+// rules. MathJax is handled separately by forwarding its own CHTML stylesheet;
+// this snapshot is for theme and snippet pseudo-elements on ordinary content.
 const PSEUDO_PROPERTIES = [
   "content", "font-family", "font-size", "font-style", "font-weight", "color",
   "display", "letter-spacing", "vertical-align", "width", "min-width",
@@ -334,11 +333,18 @@ function capturePseudoDeclarations(element: HTMLElement, pseudo: "::before" | ":
     .join(";");
 }
 
-// Web fonts the export webview must be able to load on its own: MathJax's
-// glyph fonts (math pseudo-content renders with them) plus any family that the
-// forwarded fragment pseudo rules reference (e.g. a drop-cap face). Font files
-// are inlined as data: URIs.
-async function collectExportFontFaces(extraFamilies: Set<string>): Promise<string> {
+function fontFaceFamily(rule: CSSFontFaceRule): string {
+  return rule.style
+    .getPropertyValue("font-family")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .toLowerCase();
+}
+
+// Vivliostyle eagerly initializes every forwarded @font-face. Only include the
+// MathJax families used by this rendered note, and make their files self
+// contained so the export webview never depends on Obsidian's app:// URLs.
+async function collectExportFontFaces(usedFamilies: Set<string>): Promise<string> {
   const faces: string[] = [];
   for (const sheet of Array.from(document.styleSheets)) {
     let rules: CSSRuleList | null = null;
@@ -349,17 +355,41 @@ async function collectExportFontFaces(extraFamilies: Set<string>): Promise<strin
     }
     for (const rule of Array.from(rules ?? [])) {
       if (rule.constructor.name !== "CSSFontFaceRule") continue;
-      const css = rule.cssText;
-      const family = (rule as CSSFontFaceRule).style
-        .getPropertyValue("font-family")
-        .trim()
-        .replace(/^["']|["']$/g, "")
-        .toLowerCase();
-      if (!/MJX|MathJax/i.test(css) && !extraFamilies.has(family)) continue;
-      faces.push(await inlineFontUrls(css));
+      if (!usedFamilies.has(fontFaceFamily(rule as CSSFontFaceRule))) continue;
+      faces.push(await inlineFontUrls(rule.cssText));
     }
   }
   return faces.join("\n");
+}
+
+function collectMathJaxStyles(): string {
+  const styles: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList | null = null;
+    try {
+      rules = sheet.cssRules;
+    } catch {
+      continue;
+    }
+    const owner = sheet.ownerNode as HTMLElement | null;
+    const isMathJaxSheet = /mathjax|mjx/i.test(`${owner?.id ?? ""} ${owner?.className ?? ""}`);
+    for (const rule of Array.from(rules ?? [])) {
+      if (rule.constructor.name === "CSSFontFaceRule") continue;
+      if (isMathJaxSheet || /(?:MathJax|MJX-|mjx-)/i.test(rule.cssText)) styles.push(rule.cssText);
+    }
+  }
+  return styles.join("\n");
+}
+
+function collectUsedMathFontFamilies(root: HTMLElement): Set<string> {
+  const families = new Set<string>();
+  root.querySelectorAll<HTMLElement>("mjx-container, mjx-container *").forEach((element) => {
+    for (const family of getComputedStyle(element).fontFamily.split(",")) {
+      const normalized = family.trim().replace(/^["']|["']$/g, "").toLowerCase();
+      if (/^(?:mjx|mathjax)/.test(normalized)) families.add(normalized);
+    }
+  });
+  return families;
 }
 
 async function inlineFontUrls(fontFaceCss: string): Promise<string> {
@@ -393,7 +423,10 @@ export async function snapshotComputedStyles(root: HTMLElement, _applyLedeStyles
   document.body.appendChild(mount);
   mount.appendChild(root);
 
-  const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))];
+  const usedMathFontFamilies = collectUsedMathFontFamilies(root);
+  const elements = [root, ...Array.from(root.querySelectorAll<HTMLElement>("*"))].filter(
+    (element) => !element.matches("mjx-container, mjx-container *"),
+  );
   const kept = new Set([
     "background-color", "background-image", "border-bottom-color", "border-bottom-left-radius", "border-bottom-right-radius",
     "border-bottom-style", "border-bottom-width", "border-left-color", "border-left-style", "border-left-width", "border-right-color",
@@ -447,7 +480,8 @@ export async function snapshotComputedStyles(root: HTMLElement, _applyLedeStyles
   const style = root.ownerDocument.createElement("style");
   style.setAttribute("data-pdf-computed-styles", "true");
   style.textContent = [
-    await collectExportFontFaces(new Set<string>()),
+    await collectExportFontFaces(usedMathFontFamilies),
+    collectMathJaxStyles(),
     styleRules.join("\n"),
   ].join("\n");
   root.prepend(style);

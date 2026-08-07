@@ -1,6 +1,6 @@
 {
   "name": "pdf-export-plus",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Export polished Obsidian PDFs with page-bottom footnotes and professional typography.",
   "main": "main.js",
   "scripts": {

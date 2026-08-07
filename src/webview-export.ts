@@ -16,7 +16,8 @@ export interface PaginationResult {
 }
 
 const DOM_READY_TIMEOUT = 15000;
-const LAYOUT_TIMEOUT = 30000;
+const LAYOUT_IDLE_TIMEOUT = 90000;
+const LAYOUT_TOTAL_TIMEOUT = 10 * 60 * 1000;
 
 export async function paginateInWebview(
   host: HTMLElement,
@@ -26,7 +27,7 @@ export async function paginateInWebview(
 ): Promise<PaginationResult> {
   const authorStyles = [buildPageCss(settings)];
 
-  onProgress("Opening preview...");
+  onProgress("Opening preview…");
   const webview = document.createElement("webview") as any;
   webview.src = "data:text/html;charset=utf-8," + encodeURIComponent(
     "<!doctype html><html><head><meta charset=utf-8></head><body><div id=viv-viewport data-vivliostyle-viewer-viewport></div></body></html>",
@@ -36,16 +37,10 @@ export async function paginateInWebview(
     "position:absolute;inset:0;width:100%;height:100%;display:flex;border:0;background:#aaa;",
   );
   host.appendChild(webview);
-  if (settings.debugDump) {
-    webview.addEventListener("console-message", (event: any) => {
-      if (event.message === "-- time slice --") return;
-      console.log("[PDF Footnotes webview]", event.message);
-    });
-  }
   await once(webview, "dom-ready", DOM_READY_TIMEOUT, "The preview page didn't load.");
   if (typeof webview.setZoomFactor === "function") webview.setZoomFactor(1);
 
-  onProgress("Preparing document...");
+  onProgress("Preparing document…");
   const payload = {
     bodyHtml,
     styles: authorStyles,
@@ -57,6 +52,17 @@ export async function paginateInWebview(
       window.__pdfPayload = payload;
       window.__vivDone = false;
       window.__vivError = "";
+      window.__vivPages = 0;
+      window.__vivLastProgress = Date.now();
+      ["debug", "info", "log"].forEach(function (method) {
+        var original = console[method].bind(console);
+        console[method] = function () {
+          var isFontMessage = Array.prototype.some.call(arguments, function (value) {
+            return typeof value === "string" && /\\b(?:load|found already-loaded) font\\b/i.test(value);
+          });
+          if (!isFontMessage) original.apply(console, arguments);
+        };
+      });
       document.documentElement.style.height = "100%";
       var viewport = document.getElementById("viv-viewport");
       viewport.style.position = "absolute";
@@ -65,7 +71,7 @@ export async function paginateInWebview(
     })();
   `);
 
-  onProgress("Loading Vivliostyle...");
+  onProgress("Loading fonts and styles…");
   await webview.executeJavaScript(VIVLIOSTYLE_SOURCE);
 
   // Vivliostyle nests its generated ::first-letter wrapper inside the
@@ -94,7 +100,7 @@ export async function paginateInWebview(
     })();
   `);
 
-  onProgress("Paginating with Vivliostyle...");
+  onProgress("Typesetting pages…");
   await webview.executeJavaScript(`
     (function () {
       try {
@@ -116,13 +122,20 @@ export async function paginateInWebview(
           }
         );
         window.__vivViewer = viewer;
+        var recordProgress = function () {
+          window.__vivLastProgress = Date.now();
+          try {
+            window.__vivPages = viewer.getPageSizes().length;
+          } catch (_) {}
+        };
         viewer.addListener("error", function (event) {
           var content = event && event.content;
-          window.__vivError = String(content && (content.error || content.messages) || "Vivliostyle layout failed");
+          window.__vivError = String(content && (content.error || content.messages) || "The page layout failed");
         });
+        viewer.addListener("paginationprogress", recordProgress);
         viewer.addListener("readystatechange", function () {
+          recordProgress();
           if (viewer.readyState !== window.VivliostyleCore.ReadyState.COMPLETE) return;
-          window.__vivPages = viewer.getPageSizes().length;
           window.__vivDone = true;
         });
         viewer.loadDocument(
@@ -138,11 +151,20 @@ export async function paginateInWebview(
     })();
   `);
 
-  const pageCount = await waitForLayout(webview);
+  const pageCount = await waitForLayout(webview, onProgress);
   await stackPagesForPreview(webview);
   const outputText = await safeEval(
     webview,
-    `(document.getElementById("viv-viewport").textContent || "").replace(/\\s+/g, " ").trim()`,
+    `(function () {
+      var pageCopies = Array.prototype.slice.call(document.querySelectorAll("[data-vivliostyle-page-container]")).map(function (page) {
+        var copy = page.cloneNode(true);
+        copy.querySelectorAll("style, script, template, mjx-container, mjx-assistive-mml").forEach(function (element) {
+          element.remove();
+        });
+        return copy.textContent || "";
+      });
+      return pageCopies.join(" ").replace(/\\s+/g, " ").trim();
+    })()`,
     "",
   );
   const imageReport = await safeEval<string[]>(
@@ -162,7 +184,7 @@ export async function paginateInWebview(
   );
 
   if (settings.debugDump) writeDebugDump(bodyHtml, authorStyles, pageCount);
-  onProgress(`Preview ready - ${pageCount} page${pageCount === 1 ? "" : "s"}.`);
+  onProgress(`Preview ready: ${pageCount} page${pageCount === 1 ? "" : "s"}.`);
   return { webview, pageCount, outputText, removedHidden: [], imageReport, footnotePolicyReport };
 }
 
@@ -608,28 +630,56 @@ export async function collectPrintDiagnostics(webview: any): Promise<any> {
   );
 }
 
-function waitForLayout(webview: any): Promise<number> {
+interface LayoutState {
+  status: "wait" | "ok" | "error";
+  pages: number;
+  lastProgress: number;
+  error: string;
+}
+
+function waitForLayout(webview: any, onProgress: ProgressFn): Promise<number> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
-    const poll = setInterval(async () => {
-      if (Date.now() - started > LAYOUT_TIMEOUT) {
-        clearInterval(poll);
-        reject(new Error("Vivliostyle timed out while laying out the pages."));
+    let lastReportedPageCount = 0;
+    let finished = false;
+    const poll = async () => {
+      const state = await safeEval<LayoutState>(
+        webview,
+        `({
+          status: window.__vivError ? "error" : window.__vivDone ? "ok" : "wait",
+          pages: window.__vivPages || 0,
+          lastProgress: window.__vivLastProgress || 0,
+          error: window.__vivError || ""
+        })`,
+        { status: "wait", pages: 0, lastProgress: Date.now(), error: "" },
+      );
+      if (finished) return;
+      if (state.status === "ok") {
+        finished = true;
+        resolve(state.pages);
         return;
       }
-      const state = await safeEval<string>(
-        webview,
-        `window.__vivError ? "err:" + window.__vivError : window.__vivDone ? "ok:" + (window.__vivPages || 0) : "wait"`,
-        "wait",
-      );
-      if (state.startsWith("ok:")) {
-        clearInterval(poll);
-        resolve(Number(state.slice(3)) || 0);
-      } else if (state.startsWith("err:")) {
-        clearInterval(poll);
-        reject(new Error(state.slice(4)));
+      if (state.status === "error") {
+        finished = true;
+        reject(new Error(state.error));
+        return;
       }
-    }, 300);
+      if (state.pages > lastReportedPageCount) {
+        lastReportedPageCount = state.pages;
+        onProgress(`Typesetting pages… ${state.pages} ready`);
+      }
+      const now = Date.now();
+      if (
+        now - started > LAYOUT_TOTAL_TIMEOUT ||
+        (state.lastProgress > 0 && now - state.lastProgress > LAYOUT_IDLE_TIMEOUT)
+      ) {
+        finished = true;
+        reject(new Error("The preview took too long to finish typesetting."));
+        return;
+      }
+      window.setTimeout(poll, 300);
+    };
+    void poll();
   });
 }
 

@@ -4,6 +4,9 @@ main.js
 .DS_Store
 src/pagedjs-bundle.ts
 
+# Scratch output from local export runs
+tmp/
+
 # Local development handoff notes, not part of the plugin
 HANDOFF-*.md
 handoff-assets/

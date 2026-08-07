@@ -49,9 +49,9 @@ export async function maybeRunAutotest(plugin: Plugin, settings: PdfFootnotesSet
 
     host = document.body.createDiv();
     host.setAttribute("style", "position:fixed;top:0;left:0;width:1000px;height:800px;z-index:9999;background:#fff;");
-    writeStatus("paginating");
+    writeStatus("typesetting");
     const { webview, pageCount, outputText } = await paginateInWebview(host, prepared.bodyHtml, settings, (stage) =>
-      writeStatus("paginating", { detail: stage })
+      writeStatus("typesetting", { detail: stage })
     );
 
     writeStatus("probing-pre-print");

@@ -27,7 +27,7 @@ import { paginateInWebview, printWebviewToPdf } from "./webview-export";
 // Paged.js output, footnotes at page bottoms), lets you adjust options, and
 // exports that exact preview to PDF via a native save dialog.
 export class ExportModal extends Modal {
-  private static datalistCount = 0;
+  private static fontPickerCount = 0;
   private file: TFile;
   private opts: PdfFootnotesSettings;
   private preparedByRenderOptions = new Map<string, PreparedNote>();
@@ -41,6 +41,7 @@ export class ExportModal extends Modal {
   private persist: (settings: PdfFootnotesSettings) => Promise<void>;
   private persistTimer: number | null = null;
   private dirty = false;
+  private cleanupCallbacks: Array<() => void> = [];
 
   constructor(
     app: App,
@@ -132,6 +133,7 @@ export class ExportModal extends Modal {
   onClose() {
     this.flushPersist();
     this.teardownWebview();
+    this.cleanupCallbacks.splice(0).forEach((cleanup) => cleanup());
     this.contentEl.empty();
   }
 
@@ -405,36 +407,156 @@ export class ExportModal extends Modal {
   ) {
     const { head, control } = this.addRow(parent, o.name, true);
     const emit = this.saving(o.onChange);
-    const listId = `pdfx-fonts-${++ExportModal.datalistCount}`;
-    const input = control.createEl("input", { type: "text", cls: "pdfx-text" });
+    const pickerId = ++ExportModal.fontPickerCount;
+    const listId = `pdfx-font-list-${pickerId}`;
+    const picker = control.createDiv({ cls: "pdfx-font-picker" });
+    const input = picker.createEl("input", {
+      type: "text",
+      cls: "pdfx-text pdfx-font-input",
+      attr: {
+        role: "combobox",
+        "aria-autocomplete": "list",
+        "aria-controls": listId,
+        "aria-expanded": "false",
+      },
+    });
     input.placeholder = o.placeholder;
     input.value = o.value;
-    input.setAttr("list", listId);
-    const datalist = control.createEl("datalist");
-    datalist.id = listId;
-    for (const family of installedFonts(o.value)) {
-      datalist.createEl("option", { value: family });
-    }
+    const list = picker.createDiv({
+      cls: "pdfx-font-list",
+      attr: { id: listId, role: "listbox" },
+    });
+    list.hidden = true;
+    const families = installedFonts(o.value);
+    let committedValue = o.value.trim() || o.defaultValue;
+    let visibleFamilies: string[] = [];
+    let activeIndex = -1;
 
     const preview = () => {
-      input.style.fontFamily = `"${input.value.trim() || o.defaultValue}", serif`;
+      const family = (input.value.trim() || o.defaultValue).replace(/["\\\n\r]/g, "");
+      input.style.fontFamily = `"${family}", serif`;
     };
     preview();
-    const sync = this.addResetButton(
-      head,
-      () => (input.value.trim() || o.defaultValue) === o.defaultValue,
-      () => {
-        input.value = o.defaultValue;
-        preview();
-        sync();
-        emit(o.defaultValue);
-      }
-    );
-    input.addEventListener("input", () => {
+
+    const closeList = () => {
+      list.hidden = true;
+      activeIndex = -1;
+      input.setAttr("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    };
+
+    const activate = (index: number) => {
+      if (!visibleFamilies.length) return;
+      activeIndex = Math.max(0, Math.min(index, visibleFamilies.length - 1));
+      const options = Array.from(list.querySelectorAll<HTMLElement>('[role="option"]'));
+      options.forEach((option, optionIndex) => {
+        const active = optionIndex === activeIndex;
+        option.toggleClass("is-active", active);
+        if (active) {
+          input.setAttr("aria-activedescendant", option.id);
+          option.scrollIntoView({ block: "nearest" });
+        }
+      });
+    };
+
+    const commit = (value: string) => {
+      const next = value.trim() || o.defaultValue;
+      const changed = next !== committedValue;
+      committedValue = next;
+      input.value = next;
       preview();
       sync();
-      emit(input.value);
+      closeList();
+      if (changed) emit(next);
+    };
+
+    const renderOptions = (query: string, showAll: boolean) => {
+      const normalizedQuery = showAll ? "" : query.trim().toLocaleLowerCase();
+      visibleFamilies = families
+        .filter((family) => !normalizedQuery || family.toLocaleLowerCase().includes(normalizedQuery))
+        .sort((a, b) => {
+          if (!normalizedQuery) return a.localeCompare(b);
+          const aStarts = a.toLocaleLowerCase().startsWith(normalizedQuery);
+          const bStarts = b.toLocaleLowerCase().startsWith(normalizedQuery);
+          return aStarts === bStarts ? a.localeCompare(b) : aStarts ? -1 : 1;
+        });
+      list.empty();
+      if (!visibleFamilies.length) {
+        list.createDiv({
+          cls: "pdfx-font-empty",
+          text: "No matching installed fonts. Press Enter to use this name.",
+        });
+        activeIndex = -1;
+        input.removeAttribute("aria-activedescendant");
+        return;
+      }
+      visibleFamilies.forEach((family, index) => {
+        const option = list.createDiv({
+          cls: "pdfx-font-option",
+          text: family,
+          attr: {
+            id: `pdfx-font-option-${pickerId}-${index}`,
+            role: "option",
+            "aria-selected": String(family.toLocaleLowerCase() === committedValue.toLocaleLowerCase()),
+          },
+        });
+        option.style.fontFamily = `"${family.replace(/["\\\n\r]/g, "")}", sans-serif`;
+        option.addEventListener("pointerdown", (event) => event.preventDefault());
+        option.addEventListener("click", () => commit(family));
+      });
+      const selectedIndex = visibleFamilies.findIndex(
+        (family) => family.toLocaleLowerCase() === committedValue.toLocaleLowerCase(),
+      );
+      activate(selectedIndex >= 0 ? selectedIndex : 0);
+    };
+
+    const openList = (showAll: boolean) => {
+      renderOptions(input.value, showAll);
+      list.hidden = false;
+      input.setAttr("aria-expanded", "true");
+      window.requestAnimationFrame(() => {
+        if (!list.hidden) activate(activeIndex);
+      });
+    };
+
+    const sync = this.addResetButton(
+      head,
+      () => committedValue === o.defaultValue,
+      () => commit(o.defaultValue),
+    );
+
+    input.addEventListener("focus", () => openList(true));
+    input.addEventListener("click", () => openList(true));
+    input.addEventListener("input", () => {
+      preview();
+      openList(false);
     });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (list.hidden) {
+          openList(true);
+        } else {
+          activate(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+        }
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        commit(activeIndex >= 0 ? visibleFamilies[activeIndex] : input.value);
+      } else if (event.key === "Escape" && !list.hidden) {
+        event.preventDefault();
+        input.value = committedValue;
+        preview();
+        closeList();
+      } else if (event.key === "Tab") {
+        commit(input.value);
+      }
+    });
+
+    const closeWhenClickingOutside = (event: PointerEvent) => {
+      if (!picker.contains(event.target as Node) && !list.hidden) commit(input.value);
+    };
+    document.addEventListener("pointerdown", closeWhenClickingOutside);
+    this.cleanupCallbacks.push(() => document.removeEventListener("pointerdown", closeWhenClickingOutside));
   }
 
   private addSliderRow(
@@ -568,7 +690,7 @@ export class ExportModal extends Modal {
       }
       if (maxRun >= 8) {
         this.setStatus(
-          `Possible missing passage: "${excerpt.slice(0, 60)}…". Review the paginated preview before exporting.`,
+          `Possible missing passage: "${excerpt.slice(0, 60)}…". Review the preview before exporting.`,
           true
         );
         console.warn(`[PDF Footnotes] possible dropped passage (run=${maxRun}):`, excerpt);
